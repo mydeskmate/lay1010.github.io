@@ -1,6 +1,6 @@
 ---
 layout: post
-category: "other"
+category: "自动化"
 title:  "cobbler实现centos7和centos6的无人值守安装"
 tags: [马哥,Linux,kickstart,自动化]
 ---  

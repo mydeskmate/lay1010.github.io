@@ -1,6 +1,6 @@
 ---
 layout: post
-category: "android"
+category: "运维"
 title:  "heartbeartv2实现lamp高可用"
 tags: [马哥,Linux,集群]
 ---  

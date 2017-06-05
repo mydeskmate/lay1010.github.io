@@ -1,6 +1,6 @@
 ---
 layout: post
-category: "other"
+category: "自动化"
 title:  "kickstart+http+dhcp+tftp实现centos7的无人值守安装"
 tags: [马哥,Linux,kickstart,自动化]
 ---  
