@@ -1,7 +1,7 @@
 ---
 layout: post
 title: 绿豆百合羹
-category: 厨房
+category: 运维
 tags: 
 keywords: 
 description: 
