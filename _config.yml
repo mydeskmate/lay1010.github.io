@@ -13,7 +13,7 @@ author:
   linkedin: https://www.linkedin.com/pub/anya-lin/81/91/232
 
 # 站点信息
-title: 林安亚的博客
+title: 韩圣鉴的博客
 description: My personal blog
 url: http://painterlin.com
 rss_url: /pages/atom.xml
@@ -32,12 +32,12 @@ disqus:
   shortname: painterlin
 
 # 主题设置，自动激活某个标签
-active: 读书
+active: 运维
 
 # 首页除了最新文章外显示分类
 cates: 
-  - Optimization
-  - LaTeX
+#  - Optimization
+#  - LaTeX
 
 # 中文本地化
 locals:
