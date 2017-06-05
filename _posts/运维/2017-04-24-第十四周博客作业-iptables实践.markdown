@@ -1,0 +1,172 @@
+---
+layout: post
+category: "android"
+title:  "iptables实践"
+tags: [马哥,Linux]
+---  
+
+
+系统的INPUT和OUTPUT默认策略为DROP；
+### 1、限制本地主机的web服务器在周一不允许访问；新请求的速率不能超过100个每秒；web服务器包含了admin字符串的页面不允许访问；web服务器仅允许响应报文离开本机；   
+规则： 
+```
+# 周一不能访问web服务
+ ~]# iptables -R INPUT 1 -d 172.16.0.11 -p tcp --dport 80 -m time --weekdays Mon --kerneltz -j DROP  
+# 新请求的速率不能超过100个每秒
+ ~]# iptables -I INPUT -d 172.16.0.11 -p tcp --dport 80 -m limit --limit 100/second -j ACCEPT
+# 包含了admin字符串的页面不允许访问
+]# iptables -A OUTPUT -s 172.16.0.11 -p tcp --sport 80 -m string --algo bm --string "admin" -j DROP  
+# web服务器仅允许响应报文离开本机(为了使用ssh，添加上22端口)
+~]# iptables -A OUTPUT  -s 172.16.0.11 -p tcp -m multiport --sports 22,80 -m state --state ESTABLISHED -j ACCEPT
+```  
+规则列表：
+```
+[root@localhost ~]# iptables -nvL --line-numbers
+Chain INPUT (policy DROP 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination
+1      248 16124 ACCEPT     tcp  --  *      *       0.0.0.0/0            172.16.0.11          tcp dpt:80 limit: avg 100/sec burst 5
+2        0     0 DROP       tcp  --  *      *       0.0.0.0/0            172.16.0.11          tcp dpt:80 TIME on Mon
+3    26428 1735K ACCEPT     tcp  --  *      *       0.0.0.0/0            172.16.0.11          multiport dports 22,80 state NEW,ESTABLISHED
+
+Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination
+
+Chain OUTPUT (policy DROP 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination
+1       25  7650 REJECT     tcp  --  *      *       172.16.0.11          0.0.0.0/0            tcp spt:80 STRING match  "admin" ALGO name bm TO 65535 reject-with icmp-port-unreachable
+2      115  8649 ACCEPT     tcp  --  *      *       172.16.0.11          0.0.0.0/0            multiport sports 22,80 state ESTABLISHED
+
+```
+**问题1： 设定周一的限制不生效**  
+解决方法： 重新登陆ssh  
+
+### 2、在工作时间，即周一到周五的8:30至18:00，开放本机的ftp服务给172.16.0.0网络中的主机访问；数据下载请求的次数每分钟不得超过5个；   
+(1) 内核装载ftp连接追踪的专用模块
+```
+ ~]# modprobe nf_conntrack_ftp
+ ~]# lsmod | grep ftp
+nf_conntrack_ftp       18638  0
+nf_conntrack          105745  3 xt_conntrack,nf_conntrack_ftp,nf_conntrack_ipv4
+```
+(2) 添加规则
+```
+# 放行命令连接
+ ~]#  ~]# iptables -A INPUT -s 172.16.0.0/16 -d 172.16.0.11 -p tcp --dport 21 -m time --timestart 08:30 --timestop 18:00 ! --weekdays Sat,Sun --kerneltz -m state --state NEW -m limit --limit 5/minute -j ACCEPT
+# 放行所有已建立的连接和相关连接
+~]# iptables -I INPUT -d 172.16.0.11 -m state --state ESTABLISHED,RELATED -j ACCEPT
+放行所有已建立的连接（包括命令连接和数据连接）
+~]# iptables -A OUTPUT -s 172.16.0.11  -m state --state ESTABLISHED -j ACCEPT
+
+```
+### 3、开放本机的ssh服务给172.16.x.1-172.16.x.100中的主机，x为你的座位号，新请求建立的速率一分钟不得超过2个；仅允许响应报文通过其服务端口离开本机；   
+```
+~]# iptables -A INPUT  -d 172.16.0.11 -p tcp --dport 22 -m iprange --src-range 172.16.0.1-172.16.0.100 -m limit --limit 2/minute -m state --state NEW,ESTABLISHED -j ACCEPT
+~]# iptables -A OUTPUT -s 172.16.0.11  -m state --state ESTABLISHED -j ACCEPT
+```
+### 4、拒绝TCP标志位全部为1及全部为0的报文访问本机；  
+```
+# 拒绝标志位全部为1的报文
+ ~]# iptables -A INPUT -d 172.16.0.11 -p tcp --tcp-flags ALL ALL -j DROP
+# 拒绝标志位全部为0的报文
+ ~]# iptables -A INPUT -d 172.16.0.11 -p tcp --tcp-flags ALL NONE -j DROP
+```
+### 5、允许本机ping别的主机；但不开放别的主机ping本机；   
+```
+本机ping别的主机：
+~]# iptables -A OUTPUT -s 172.16.0.11 -p icmp --icmp-type 8 -j ACCEPT             #请求出去
+~]# iptables -A INPUT -d 172.16.0.11 -p icmp --icmp-type 0 -j ACCEPT             #请求响应
+
+不开放别的主机ping自己，默认DROP已经拒绝
+```
+### 6、判断下述规则的意义：  
+```
+  # iptables -N clean_in
+ 创建自定义链clean_in
+  # iptables -A clean_in -d 255.255.255.255 -p icmp -j DROP  
+ 丢弃对受限的广播地址255.255.255.255的ping包
+  # iptables -A clean_in -d 172.16.255.255 -p icmp -j DROP
+ 丢弃对指向网络的广播地址172.16.255.255的广播ping包
+  # iptables -A clean_in -p tcp ! --syn -m state --state NEW -j DROP  
+ 丢弃tcp连接非第一次握手的新连接请求包
+  # iptables -A clean_in -p tcp --tcp-flags ALL ALL -j DROP  
+ 丢弃标志位全为1的报文---非正常报文
+  # iptables -A clean_in -p tcp --tcp-flags ALL NONE -j DROP
+ 丢弃标志位全为0的报文---非正常报文
+  # iptables -A clean_in -d 172.16.100.7 -j RETURN 
+ 目标地址为172.16.100.7的包返回到主链  
+ 
+ 总结1： 以上规则定义了一个自定义链，丢弃所有的不正常报文，对正常报文返回到主链继续处理，
+ 总结2： 自定义链只能被调用
+ 
+  # iptables -A INPUT -d 172.16.100.7 -j clean_in
+  对目标主机172.16.100.7的报文调用自定义链clean_in处理
+  
+  # iptables -A INPUT  -i lo -j ACCEPT  
+  允许数据报文流入本地回环接口lo
+  # iptables -A OUTPUT -o lo -j ACCEPT
+  允许数据报文流程本地回环接口lo
+  总结3： 以上两条是开放本地回环接口   
+  
+  # iptables -A INPUT  -i eth0 -m multiport -p tcp --dports 53,113,135,137,139,445 -j DROP
+  指定流入接口为eth0，访问tcp端口53，113，135，137，139，445的请求报文丢弃
+ 
+  # iptables -A INPUT  -i eth0 -m multiport -p udp --dports 53,113,135,137,139,445 -j DROP
+  指定流入接口为eth0,访问udp端口53,113,135,137,139,445的请求报文丢弃
+  
+  # iptables -A INPUT  -i eth0 -p udp --dport 1026 -j DROP
+  丢弃流入接口为eth0，访问udp 1026端口的请求
+  
+  # iptables -A INPUT  -i eth0 -m multiport -p tcp --dports 1433,4899 -j DROP
+  流入接口为eth0,访问1433，4899端口的tcp连接请求丢弃
+  # iptables -A INPUT  -p icmp -m limit --limit 10/second -j ACCEPT
+  限制ping包速率每秒不超过10个
+```   
+以下是一位同学的总结，感觉不错，记录于此
+>规则说明：  
+1） 首先创建了一个名为clean_in的自定义链，该链用来对目标地址为172.16.100.7的所有访问进行初次过滤，将含有非法的广播ping包以及异常的tcp连接剔除出去，剩下的包则通过RETURN返回给INPUT链，并由INPUT链后面的策略继续进行匹配；  
+2）INPUT链允许对本地lo的请求包以及由lo发出的包，此类请求通常是针对lvs-dr模型下的rs；  
+3） INPUT链拒绝到本机dns，nfs访问，4899（radmin远程控制软件端口，容易被黑客控制），1433（SQL-SERVER端口），1026端口，并拒绝每秒超过10次的Flood-ping包。  
+
+
+###  7、通过tcp_wrapper控制vsftpd仅允许172.16.0.0/255.255.0.0网络中的主机访问，但172.16.100.3除外；对所被被拒绝的访问尝试都记录在/var/log/tcp_wrapper.log日志文件中；   
+```
+]# vim /etc/hosts.allow
+vsftpd:172.16. EXCEPT 172.16.0.12
+#此处因测试需要改为172.16.0.12
+]# vim /etc/hosts.deny
+vsftpd:ALL:spawn /bin/echo $(date) login attempt from %c to %s, %d >> /var/log/tcp_wrapper.log
+```
+
+效果：
+172.16.0.10主机可以访问
+```
+[root@localhost ~]# ftp 172.16.0.11
+Connected to 172.16.0.11 (172.16.0.11).
+220 (vsFTPd 3.0.2)
+Name (172.16.0.11:root): centos
+331 Please specify the password.
+Password:
+230 Login successful.
+Remote system type is UNIX.
+Using binary mode to transfer files.
+ftp> ls
+227 Entering Passive Mode (172,16,0,11,86,64).
+150 Here comes the directory listing.
+226 Directory send OK.
+```
+172.16.0.12访问被拒绝
+```
+[root@localhost ~]# ftp 172.16.0.11
+Connected to 172.16.0.11 (172.16.0.11).
+421 Service not available.
+ftp> ls
+Not connected.
+查看拒绝日志： 
+[root@localhost centos]# cat /var/log/tcp_wrapper.log
+Thu May 4 23:25:07 CST 2017 login attempt from 172.16.0.12 to vsftpd@172.16.0.11, vsftpd
+```
+
+ 
+
+
+ 

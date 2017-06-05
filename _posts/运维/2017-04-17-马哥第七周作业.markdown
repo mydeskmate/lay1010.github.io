@@ -1,0 +1,771 @@
+---
+layout: post
+category: "android"
+title:  "磁盘管理命令和脚本练习1"
+tags: [马哥,Linux]
+---
+  
+### 1、创建一个10G分区，并格式为ext4文件系统；
+(1) 要求其block大小为2048, 预留空间百分比为2, 卷标为MYDATA, 默认挂载属性包含acl；
+(2) 挂载至/data/mydata目录，要求挂载时禁止程序自动运行，且不更新文件的访问时间戳；  
+  
+```
+查看当前分区情况
+[root@han ~]# fdisk -l
+
+Disk /dev/sda: 42.9 GB, 42949672960 bytes
+255 heads, 63 sectors/track, 5221 cylinders
+Units = cylinders of 16065 * 512 = 8225280 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk identifier: 0x000c622b
+
+   Device Boot      Start         End      Blocks   Id  System
+/dev/sda1   *           1          26      204800   83  Linux
+Partition 1 does not end on cylinder boundary.
+/dev/sda2              26        3851    30720000   83  Linux
+/dev/sda3            3851        3876      204800   82  Linux swap / Solaris
+创建新分区
+[root@han ~]# fdisk /dev/sda
+创建扩展分区
+Command (m for help): n
+Command action
+   e   extended
+   p   primary partition (1-4)
+e
+Selected partition 4
+First cylinder (3876-5221, default 3876):
+Using default value 3876
+Last cylinder, +cylinders or +size{K,M,G} (3876-5221, default 5221):
+Using default value 5221
+Command (m for help): p
+
+Disk /dev/sda: 42.9 GB, 42949672960 bytes
+255 heads, 63 sectors/track, 5221 cylinders
+Units = cylinders of 16065 * 512 = 8225280 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk identifier: 0x000c622b
+
+   Device Boot      Start         End      Blocks   Id  System
+/dev/sda1   *           1          26      204800   83  Linux
+Partition 1 does not end on cylinder boundary.
+/dev/sda2              26        3851    30720000   83  Linux
+/dev/sda3            3851        3876      204800   82  Linux swap / Solaris
+/dev/sda4            3876        5221    10807058+   5  Extended
+
+创建逻辑分区
+Command (m for help): n
+First cylinder (3876-5221, default 3876):
+Using default value 3876
+Last cylinder, +cylinders or +size{K,M,G} (3876-5221, default 5221): +10G
+
+Command (m for help): w
+The partition table has been altered!
+
+Calling ioctl() to re-read partition table.
+
+重新读取分区表
+[root@han ~]# partx -a /dev/sda
+BLKPG: Device or resource busy
+error adding partition 1
+BLKPG: Device or resource busy
+error adding partition 2
+BLKPG: Device or resource busy
+error adding partition 3
+[root@han ~]# partx -a /dev/sda
+BLKPG: Device or resource busy
+error adding partition 1
+BLKPG: Device or resource busy
+error adding partition 2
+BLKPG: Device or resource busy
+error adding partition 3
+BLKPG: Device or resource busy
+error adding partition 4
+BLKPG: Device or resource busy
+error adding partition 5
+
+查看系统识别的分区
+[root@han ~]# cat /proc/partitions
+major minor  #blocks  name
+
+   8        0   41943040 sda
+   8        1     204800 sda1
+   8        2   30720000 sda2
+   8        3     204800 sda3
+   8        4         31 sda4
+   8        5   10485727 sda5
+
+查看磁盘分区情况
+[root@han ~]# fdisk -l
+
+Disk /dev/sda: 42.9 GB, 42949672960 bytes
+255 heads, 63 sectors/track, 5221 cylinders
+Units = cylinders of 16065 * 512 = 8225280 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk identifier: 0x000c622b
+
+   Device Boot      Start         End      Blocks   Id  System
+/dev/sda1   *           1          26      204800   83  Linux
+Partition 1 does not end on cylinder boundary.
+/dev/sda2              26        3851    30720000   83  Linux
+/dev/sda3            3851        3876      204800   82  Linux swap / Solaris
+/dev/sda4            3876        5221    10807058+   5  Extended
+/dev/sda5            3876        5181    10485727   83  Linux
+
+格式化分区
+[root@han ~]# mke2fs -t ext4 -b 2048 -m 2 -L MYDATA /dev/sda5  
+
+开启默认挂载特性
+[root@han ~]# tune2fs -o acl  /dev/sda5
+挂载分区
+[root@han ~]# mount -o  noexec,noatime /dev/sda5 /data/mydata
+```  
+
+### 2、创建一个大小为1G的swap分区，并创建好文件系统，并启用之；  
+```
+创建1G的分区
+[root@han ~]# fdisk /dev/sdb
+Device contains neither a valid DOS partition table, nor Sun, SGI or OSF disklabel
+Building a new DOS disklabel with disk identifier 0x24980e07.
+Changes will remain in memory only, until you decide to write them.
+After that, of course, the previous content won't be recoverable.
+
+Warning: invalid flag 0x0000 of partition table 4 will be corrected by w(rite)
+
+WARNING: DOS-compatible mode is deprecated. It's strongly recommended to
+         switch off the mode (command 'c') and change display units to
+         sectors (command 'u').
+
+Command (m for help): n
+Command action
+   e   extended
+   p   primary partition (1-4)
+p
+Partition number (1-4): 
+Value out of range.
+Partition number (1-4): 1
+First cylinder (1-2610, default 1): 
+Using default value 1
+Last cylinder, +cylinders or +size{K,M,G} (1-2610, default 2610): +1G
+
+Command (m for help): p
+
+Disk /dev/sdb: 21.5 GB, 21474836480 bytes
+255 heads, 63 sectors/track, 2610 cylinders
+Units = cylinders of 16065 * 512 = 8225280 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk identifier: 0x24980e07
+
+   Device Boot      Start         End      Blocks   Id  System
+/dev/sdb1               1         132     1060258+  83  Linux
+
+Command (m for help): w
+The partition table has been altered!
+
+Calling ioctl() to re-read partition table.
+Syncing disks.
+
+重新读取分区表
+[root@han ~]# partx -a /dev/sdb
+BLKPG: Device or resource busy
+error adding partition 1
+[root@han ~]# cat /proc/partitions 
+major minor  #blocks  name
+
+   8        0   41943040 sda
+   8        1     204800 sda1
+   8        2   30720000 sda2
+   8        3     204800 sda3
+   8        4          1 sda4
+   8        5   10485727 sda5
+   8       16   20971520 sdb
+   8       17    1060258 sdb1
+
+格式化swap分区
+[root@han ~]# mkswap /dev/sdb1
+Setting up swapspace version 1, size = 1060252 KiB
+no label, UUID=7597f39c-fe1a-4dea-957e-dc051b2a9be8
+
+查看分区使用情况
+[root@han ~]# free -m
+             total       used       free     shared    buffers     cached
+Mem:           980        163        817          0         15         56
+-/+ buffers/cache:         90        889
+Swap:          199          0        199
+
+启动swap分区
+[root@han ~]# swapon /dev/sdb1
+
+[root@han ~]# free -m
+             total       used       free     shared    buffers     cached
+Mem:           980        163        816          0         15         56
+-/+ buffers/cache:         91        889
+Swap:         1235          0       1235
+
+查看分区uuid和类型
+[root@han ~]# blkid
+/dev/sda5: LABEL="MYDATA" UUID="4721b08d-3ed8-4ad8-a4cf-215cc15b1a3a" TYPE="ext4" 
+/dev/sda1: UUID="5576bf88-a991-4af9-b8a7-ff55f6f5a67f" TYPE="ext4" 
+/dev/sda2: UUID="1cc68cb8-0de5-4cbf-ad1c-b6ed129b1177" TYPE="ext4" 
+/dev/sda3: UUID="9ee78e6e-d386-4af2-90e7-17bd0f594d06" TYPE="swap" 
+/dev/sdb1: UUID="7597f39c-fe1a-4dea-957e-dc051b2a9be8" TYPE="swap"
+
+```
+### 3、写一个脚本
+(1)、获取并列出当前系统上的所有磁盘设备；
+(2)、显示每个磁盘设备上每个分区相关的空间使用信息；  
+```
+#!/bin/bah
+# 显示当前系统所有磁盘分区的使用情况
+
+disk=$(fdisk -l | grep "^Disk /dev/sd[a-z]" | awk -F [:" "] '{print $2}')
+echo -e "磁盘设备有:\n$disk"
+
+echo "磁盘的分区使用情况如下:"
+df
+
+执行结果:
+[root@han scripts]# bash diskinfo.sh
+磁盘设备有:
+/dev/sda
+/dev/sdb
+磁盘的分区使用情况如下:
+Filesystem     1K-blocks    Used Available Use% Mounted on
+/dev/sda2       30106576 3515944  25054632  13% /
+tmpfs             502068       0    502068   0% /dev/shm
+/dev/sda1         194241   34123    149878  19% /boot
+
+```
+### 4、总结RAID的各个级别及其组合方式和性能的不同；  
+```
+RAID-0:  
+将几块磁盘并行组织起来,当作一块磁盘使用
+raid控制器将数据分成若干chunck,再平均存储到不同的磁盘上去耐用性下降,出错几率上升, 存储非关键性数据
+	读、写性能提升；
+	可用空间：N*min(S1,S2,...)
+	无容错能力
+	最少磁盘数：2, 2+
+
+RAID-1： 
+	读性能提升、写性能略有下降；
+	可用空间：1*min(S1,S2,...)
+	有冗余能力
+	最少磁盘数：2, 2+
+
+RAID-4： 
+    最少磁盘数: 3+
+    其中一块盘存校验数据(做亦或运算)
+	风险高,
+	校验盘有性能瓶颈
+
+RAID-5： 
+	读、写性能提升
+	可用空间：(N-1)*min(S1,S2,...)
+	有容错能力：1块磁盘
+	最少磁盘数：3, 3+
+    轮流做校验盘
+
+RAID-6：不常用
+		读、写性能提升
+		可用空间：(N-2)*min(S1,S2,...)
+		有容错能力：2块磁盘
+		最少磁盘数：4, 4+
+        校验码存两次
+
+混合类型
+RAID-10：
+		读、写性能提升
+		可用空间：N*min(S1,S2,...)/2
+		有容错能力：每组镜像最多只能坏一块；
+		最少磁盘数：4, 4+
+
+RAID-01: 不常用
+
+		风险比raid10大
+		每组坏一个,数据丢失
+
+JBOD：Just a Bunch Of Disks
+	功能：将多块磁盘的空间合并一个大的连续空间使用；
+	可用空间：sum(S1,S2,...)
+
+常用级别：RAID-0, RAID-1, RAID-5, RAID-10, RAID-50, JBOD
+
+```
+### 5、创建一个大小为10G的RAID1，要求有一个空闲盘，而且CHUNK大小为128k;  
+```
+(1)创建分区
+[root@lab1 ~]# fdisk /dev/sda
+Welcome to fdisk (util-linux 2.23.2).
+
+Changes will remain in memory only, until you decide to write them.
+Be careful before using the write command.
+
+
+Command (m for help): p
+
+Disk /dev/sda: 214.7 GB, 214748364800 bytes, 419430400 sectors
+Units = sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk label type: dos
+Disk identifier: 0x0003bc7d
+
+   Device Boot      Start         End      Blocks   Id  System
+/dev/sda1   *        2048     1026047      512000   83  Linux
+/dev/sda2         1026048   207888383   103431168   8e  Linux LVM
+
+Command (m for help): n
+Partition type:
+   p   primary (2 primary, 0 extended, 2 free)
+   e   extended
+Select (default p): e
+Partition number (3,4, default 3): 3
+First sector (207888384-419430399, default 207888384):
+Using default value 207888384
+Last sector, +sectors or +size{K,M,G} (207888384-419430399, default 419430399):
+Using default value 419430399
+Partition 3 of type Extended and of size 100.9 GiB is set
+
+Command (m for help): p
+
+Disk /dev/sda: 214.7 GB, 214748364800 bytes, 419430400 sectors
+Units = sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk label type: dos
+Disk identifier: 0x0003bc7d
+
+   Device Boot      Start         End      Blocks   Id  System
+/dev/sda1   *        2048     1026047      512000   83  Linux
+/dev/sda2         1026048   207888383   103431168   8e  Linux LVM
+/dev/sda3       207888384   419430399   105771008    5  Extended
+
+Command (m for help): n
+Partition type:
+   p   primary (2 primary, 1 extended, 1 free)
+   l   logical (numbered from 5)
+Select (default p): l
+Adding logical partition 5
+First sector (207890432-419430399, default 207890432):
+Using default value 207890432
+Last sector, +sectors or +size{K,M,G} (207890432-419430399, default 419430399): +10G
+Partition 5 of type Linux and of size 10 GiB is set
+
+Command (m for help): n
+Partition type:
+   p   primary (2 primary, 1 extended, 1 free)
+   l   logical (numbered from 5)
+Select (default p): l
+Adding logical partition 6
+First sector (228864000-419430399, default 228864000):
+Using default value 228864000
+Last sector, +sectors or +size{K,M,G} (228864000-419430399, default 419430399): +10G
+Partition 6 of type Linux and of size 10 GiB is set
+
+Command (m for help): p
+
+Disk /dev/sda: 214.7 GB, 214748364800 bytes, 419430400 sectors
+Units = sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk label type: dos
+Disk identifier: 0x0003bc7d
+
+   Device Boot      Start         End      Blocks   Id  System
+/dev/sda1   *        2048     1026047      512000   83  Linux
+/dev/sda2         1026048   207888383   103431168   8e  Linux LVM
+/dev/sda3       207888384   419430399   105771008    5  Extended
+/dev/sda5       207890432   228861951    10485760   83  Linux
+/dev/sda6       228864000   249835519    10485760   83  Linux
+
+Command (m for help): t
+Partition number (1-3,5,6, default 6): 5
+Hex code (type L to list all codes): fd
+Changed type of partition 'Linux' to 'Linux raid autodetect'
+
+Command (m for help): t
+Partition number (1-3,5,6, default 6): 6
+Hex code (type L to list all codes): fd
+Changed type of partition 'Linux' to 'Linux raid autodetect'
+
+Command (m for help): p
+
+Disk /dev/sda: 214.7 GB, 214748364800 bytes, 419430400 sectors
+Units = sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk label type: dos
+Disk identifier: 0x0003bc7d
+
+   Device Boot      Start         End      Blocks   Id  System
+/dev/sda1   *        2048     1026047      512000   83  Linux
+/dev/sda2         1026048   207888383   103431168   8e  Linux LVM
+/dev/sda3       207888384   419430399   105771008    5  Extended
+/dev/sda5       207890432   228861951    10485760   fd  Linux raid autodetect
+/dev/sda6       228864000   249835519    10485760   fd  Linux raid autodetect
+
+漏了一个分区，下面补上
+Command (m for help): n
+Partition type:
+   p   primary (2 primary, 1 extended, 1 free)
+   l   logical (numbered from 5)
+Select (default p): l
+Adding logical partition 7
+First sector (249837568-419430399, default 249837568):
+Using default value 249837568
+Last sector, +sectors or +size{K,M,G} (249837568-419430399, default 419430399): +10G
+Partition 7 of type Linux and of size 10 GiB is set
+
+Command (m for help): p
+
+Disk /dev/sda: 214.7 GB, 214748364800 bytes, 419430400 sectors
+Units = sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk label type: dos
+Disk identifier: 0x0003bc7d
+
+   Device Boot      Start         End      Blocks   Id  System
+/dev/sda1   *        2048     1026047      512000   83  Linux
+/dev/sda2         1026048   207888383   103431168   8e  Linux LVM
+/dev/sda3       207888384   419430399   105771008    5  Extended
+/dev/sda5       207890432   228861951    10485760   fd  Linux raid autodetect
+/dev/sda6       228864000   249835519    10485760   fd  Linux raid autodetect
+/dev/sda7       249837568   270809087    10485760   83  Linux
+
+Command (m for help): t
+Partition number (1-3,5-7, default 7): 7
+Hex code (type L to list all codes): fd
+Changed type of partition 'Linux' to 'Linux raid autodetect'
+
+Command (m for help): p
+
+Disk /dev/sda: 214.7 GB, 214748364800 bytes, 419430400 sectors
+Units = sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk label type: dos
+Disk identifier: 0x0003bc7d
+
+   Device Boot      Start         End      Blocks   Id  System
+/dev/sda1   *        2048     1026047      512000   83  Linux
+/dev/sda2         1026048   207888383   103431168   8e  Linux LVM
+/dev/sda3       207888384   419430399   105771008    5  Extended
+/dev/sda5       207890432   228861951    10485760   fd  Linux raid autodetect
+/dev/sda6       228864000   249835519    10485760   fd  Linux raid autodetect
+/dev/sda7       249837568   270809087    10485760   fd  Linux raid autodetect
+
+Command (m for help): w
+The partition table has been altered!
+
+Calling ioctl() to re-read partition table.
+
+WARNING: Re-reading the partition table failed with error 16: Device or resource busy.
+The kernel still uses the old table. The new table will be used at
+the next reboot or after you run partprobe(8) or kpartx(8)
+
+[root@lab1 ~]# partx -a /dev/sda
+partx: /dev/sda: error adding partitions 1-2
+[root@lab1 ~]# partx -a /dev/sda
+partx: /dev/sda: error adding partitions 1-3
+partx: /dev/sda: error adding partitions 5-7
+
+[root@lab1 ~]# cat /proc/partitions
+major minor  #blocks  name
+
+  11        0    4228096 sr0
+   8        0  209715200 sda
+   8        1     512000 sda1
+   8        2  103431168 sda2
+   8        3          1 sda3
+   8        5   10485760 sda5
+   8        6   10485760 sda6
+   8        7   10485760 sda7
+ 253        0  102400000 dm-0
+ 253        1    1024000 dm-1
+
+（2） 创建raid
+[root@lab1 ~]# yum -y install mdadm
+
+[root@lab1 ~]# mdadm -C /dev/md1 -a yes -l 1 -c 128 -n 2 -x 1 /dev/sda{5,6,7}
+mdadm: Note: this array has metadata at the start and
+    may not be suitable as a boot device.  If you plan to
+    store '/boot' on this device please ensure that
+    your boot-loader understands md/v1.x metadata, or use
+    --metadata=0.90
+Continue creating array?
+Continue creating array? (y/n) y
+mdadm: Defaulting to version 1.2 metadata
+mdadm: array /dev/md1 started.
+
+
+```
+### 6、创建一个大小为4G的RAID5设备，chunk大小为256k，格式化ext4文件系统，要求可开机自动挂载至/backup目录，而且不更新访问时间戳，且支持acl功能；  
+```
+(1)创建3个2G的分区
+[root@lab1 ~]# fdisk /dev/sda
+Welcome to fdisk (util-linux 2.23.2).
+
+Changes will remain in memory only, until you decide to write them.
+Be careful before using the write command.
+
+
+Command (m for help): n
+Partition type:
+   p   primary (2 primary, 1 extended, 1 free)
+   l   logical (numbered from 5)
+Select (default p): l
+Adding logical partition 8
+First sector (270811136-419430399, default 270811136):
+Using default value 270811136
+Last sector, +sectors or +size{K,M,G} (270811136-419430399, default 419430399): +2G
+Partition 8 of type Linux and of size 2 GiB is set
+
+Command (m for help): n
+Partition type:
+   p   primary (2 primary, 1 extended, 1 free)
+   l   logical (numbered from 5)
+Select (default p): l
+Adding logical partition 9
+First sector (275007488-419430399, default 275007488):
+Using default value 275007488
+Last sector, +sectors or +size{K,M,G} (275007488-419430399, default 419430399): +2G
+Partition 9 of type Linux and of size 2 GiB is set
+
+Command (m for help): n
+Partition type:
+   p   primary (2 primary, 1 extended, 1 free)
+   l   logical (numbered from 5)
+Select (default p): l
+Adding logical partition 10
+First sector (279203840-419430399, default 279203840):
+Using default value 279203840
+Last sector, +sectors or +size{K,M,G} (279203840-419430399, default 419430399): +2G
+Partition 10 of type Linux and of size 2 GiB is set
+
+Command (m for help): p
+
+Disk /dev/sda: 214.7 GB, 214748364800 bytes, 419430400 sectors
+Units = sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk label type: dos
+Disk identifier: 0x0003bc7d
+
+   Device Boot      Start         End      Blocks   Id  System
+/dev/sda1   *        2048     1026047      512000   83  Linux
+/dev/sda2         1026048   207888383   103431168   8e  Linux LVM
+/dev/sda3       207888384   419430399   105771008    5  Extended
+/dev/sda5       207890432   228861951    10485760   fd  Linux raid autodetect
+/dev/sda6       228864000   249835519    10485760   fd  Linux raid autodetect
+/dev/sda7       249837568   270809087    10485760   fd  Linux raid autodetect
+/dev/sda8       270811136   275005439     2097152   83  Linux
+/dev/sda9       275007488   279201791     2097152   83  Linux
+/dev/sda10      279203840   283398143     2097152   83  Linux
+
+Command (m for help): t
+Partition number (1-3,5-10, default 10): 8
+Hex code (type L to list all codes): fd
+Changed type of partition 'Linux' to 'Linux raid autodetect'
+
+Command (m for help): t
+Partition number (1-3,5-10, default 10): 9
+Hex code (type L to list all codes): fd
+Changed type of partition 'Linux' to 'Linux raid autodetect'
+
+Command (m for help): t
+Partition number (1-3,5-10, default 10): 10
+Hex code (type L to list all codes): fd
+Changed type of partition 'Linux' to 'Linux raid autodetect'
+
+Command (m for help): w
+The partition table has been altered!
+
+Calling ioctl() to re-read partition table.
+
+WARNING: Re-reading the partition table failed with error 16: Device or resource busy.
+The kernel still uses the old table. The new table will be used at
+the next reboot or after you run partprobe(8) or kpartx(8)
+Syncing disks.
+
+[root@lab1 ~]# partx -a /dev/sda
+partx: /dev/sda: error adding partitions 1-3
+partx: /dev/sda: error adding partitions 5-7
+[root@lab1 ~]# partx -a /dev/sda
+partx: /dev/sda: error adding partitions 1-3
+partx: /dev/sda: error adding partitions 5-10
+
+（2）创建raid
+[root@lab1 ~]# mdadm -C /dev/md2 -a yes -l 5 -c 256 -n 3  /dev/sda{8,9,10}
+mdadm: Defaulting to version 1.2 metadata
+mdadm: array /dev/md2 started.
+
+（3）格式化并挂载
+[root@lab1 ~]# mkfs.ext4 /dev/md2
+mke2fs 1.42.9 (28-Dec-2013)
+Filesystem label=
+OS type: Linux
+Block size=4096 (log=2)
+Fragment size=4096 (log=2)
+Stride=64 blocks, Stripe width=128 blocks
+262144 inodes, 1047552 blocks
+52377 blocks (5.00%) reserved for the super user
+First data block=0
+Maximum filesystem blocks=1073741824
+32 block groups
+32768 blocks per group, 32768 fragments per group
+8192 inodes per group
+Superblock backups stored on blocks:
+        32768, 98304, 163840, 229376, 294912, 819200, 884736
+
+Allocating group tables: done
+Writing inode tables: done
+Creating journal (16384 blocks): done
+Writing superblocks and filesystem accounting information: done
+
+[root@lab1 ~]# mdadm -D /dev/md2
+/dev/md2:
+        Version : 1.2
+  Creation Time : Tue Feb 21 05:15:06 2017
+     Raid Level : raid5
+     Array Size : 4190208 (4.00 GiB 4.29 GB)
+  Used Dev Size : 2095104 (2046.00 MiB 2145.39 MB)
+   Raid Devices : 3
+  Total Devices : 3
+    Persistence : Superblock is persistent
+
+    Update Time : Tue Feb 21 05:17:54 2017
+          State : clean
+ Active Devices : 3
+Working Devices : 3
+ Failed Devices : 0
+  Spare Devices : 0
+
+         Layout : left-symmetric
+     Chunk Size : 256K
+
+           Name : lab1.tfedu.net:2  (local to host lab1.tfedu.net)
+           UUID : 21b997cd:3ad38c23:3838adc4:0a70bce8
+         Events : 18
+
+    Number   Major   Minor   RaidDevice State
+       0       8        8        0      active sync   /dev/sda8
+       1       8        9        1      active sync   /dev/sda9
+       3       8       10        2      active sync   /dev/sda10
+
+[root@lab1 ~]# mkdir /backup
+[root@lab1 ~]# vim /etc/fstab
+/dev/md2 /backup  ext4 defaults,acl,noatime 0 0
+[root@lab1 ~]# mount -a
+[root@lab1 ~]# mount | grep md2
+/dev/md2 on /backup type ext4 (rw,noatime,seclabel,stripe=128,data=ordered)
+
+
+```
+### 7、写一个脚本
+(1) 接受一个以上文件路径作为参数；
+(2) 显示每个文件拥有的行数；
+(3) 总结说明本次共为几个文件统计了其行数；  
+```
+#!/bin/bash
+# 统计传入文件的行数
+
+if [ $# -lt 1 ];then
+        echo "请输入至少一个参数"
+		exit 1
+fi
+
+files=0
+file_num=$#
+while [ $file_num -gt 0 ];do
+        if [ -f $1 ];then
+                lines=$(cat $1 | wc -l)
+                let files+=1
+                echo "$1有${lines}行"
+        else
+                echo "$1 不存在"
+        fi
+
+        let file_num-=1
+        shift
+done
+echo "总共有${files}个文件统计了其行数"
+
+执行结果:
+[root@localhost ~]# bash  files.sh /etc/issue /etc/fstab 
+/etc/issue有3行
+/etc/fstab有12行
+总共有2个文件统计了其行数
+
+```
+### 8、写一个脚本
+(1) 传递两个以上字符串当作用户名；
+(2) 创建这些用户；且密码同用户名；
+(3) 总结说明共创建了几个用户；
+```
+#!/bin/bash
+# 根据传入的字符串创建用户
+
+if [ $# -lt 3 ];then
+        echo "请输入至少3个参数"
+        exit 1
+fi
+
+num=0
+file_num=$#
+while [ $file_num -gt 0 ];do
+        if ! id $1 &> /dev/null;then
+                useradd $1
+                echo "$1" | passwd --stdin $1 &> /dev/null
+                let num+=1
+                echo "$1创建成功"
+        else
+                echo "$1已经存在"
+        fi
+
+        let file_num-=1
+        shift
+done
+echo "总共创建了${num}个用户"
+
+
+执行结果:
+[root@localhost ~]# bash createuser.sh zhang
+请输入至少3个参数
+[root@localhost ~]# bash createuser.sh zhang wang sun
+zhang创建成功
+wang创建成功
+sun创建成功
+总共创建了3个用户
+[root@localhost ~]# bash createuser.sh zhang wang sun
+zhang已经存在
+wang已经存在
+sun已经存在
+总共创建了0个用户
+
+```
+### 9、写一个脚本，新建20个用户，visitor1-visitor20；计算他们的ID之和；
+```
+#!/bin/bash
+#创建visitor1-visitor20,并计算id之和
+
+idsum=0
+for i in {1..20};do
+        if ! id visitor${i} &> /dev/null;then
+                useradd visitor${i}
+                let idsum+=$(id -u visitor${i})
+        else
+                echo "用户visitor${i}已存在"
+        fi
+done
+
+echo "创建的用户id之和为: $idsum"
+
+执行结果: 
+[root@localhost ~]# bash createuser2.sh
+创建的用户id之和为: 20270
+```
+

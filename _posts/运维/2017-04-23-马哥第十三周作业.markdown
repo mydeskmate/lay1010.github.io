@@ -1,0 +1,646 @@
+---
+layout: post
+category: "android"
+title:  "samba,nfs,vsftpd搭建"
+tags: [马哥,Linux]
+---    
+
+## 1、建立samba共享，共享目录为/data，要求：（描述完整的过程）    
+1)共享名为shared，工作组为magedu；  
+2)添加组develop，添加用户gentoo,centos和ubuntu，其中gentoo和centos以develop为附加组，ubuntu不属于develop组；密码均为用户名；  
+3)添加samba用户gentoo,centos和ubuntu，密码均为“mageedu”；  
+4)此samba共享shared仅允许develop组具有写权限，其他用户只能以只读方式访问；  
+5)此samba共享服务仅允许来自于172.16.0.0/16网络的主机访问；    
+  
+>系统： CentOS7.2  
+>samba服务端：172.16.0.11    
+>samba客户端：172.16.0.13  
+
+### 一、服务端
+（1） 安装  
+```
+[root@www ~]# yum -y install samba
+[root@www ~]# systemctl start nmb.service
+[root@www ~]# systemctl start smb.service
+[root@www ~]# ss -tunlp | grep nmbd
+udp    UNCONN     0      0      172.16.255.255:137                   *:*                   users:(("nmbd",pid=15220,fd=19))
+udp    UNCONN     0      0      172.16.0.11:137                   *:*                   users:(("nmbd",pid=15220,fd=18))
+udp    UNCONN     0      0         *:137                   *:*                   users:(("nmbd",pid=15220,fd=16))
+udp    UNCONN     0      0      172.16.255.255:138                   *:*                   users:(("nmbd",pid=15220,fd=21))
+udp    UNCONN     0      0      172.16.0.11:138                   *:*                   users:(("nmbd",pid=15220,fd=20))
+udp    UNCONN     0      0         *:138                   *:*                   users:(("nmbd",pid=15220,fd=17))
+[root@www ~]# ss -tulnp | egrep 'smbd|nmbd'
+udp    UNCONN     0      0      172.16.255.255:137                   *:*                   users:(("nmbd",pid=15220,fd=19))
+udp    UNCONN     0      0      172.16.0.11:137                   *:*                   users:(("nmbd",pid=15220,fd=18))
+udp    UNCONN     0      0         *:137                   *:*                   users:(("nmbd",pid=15220,fd=16))
+udp    UNCONN     0      0      172.16.255.255:138                   *:*                   users:(("nmbd",pid=15220,fd=21))
+udp    UNCONN     0      0      172.16.0.11:138                   *:*                   users:(("nmbd",pid=15220,fd=20))
+udp    UNCONN     0      0         *:138                   *:*                   users:(("nmbd",pid=15220,fd=17))
+tcp    LISTEN     0      50        *:139                   *:*                   users:(("smbd",pid=15229,fd=38))
+tcp    LISTEN     0      50        *:445                   *:*                   users:(("smbd",pid=15229,fd=37))
+tcp    LISTEN     0      50       :::139                  :::*                   users:(("smbd",pid=15229,fd=36))
+tcp    LISTEN     0      50       :::445                  :::*                   users:(("smbd",pid=15229,fd=35))
+```    
+(2) 创建共享目录
+```
+[root@www samba]# mkdir /data
+
+```
+(3) 创建系统组和系统用户  
+```
+[root@www samba]# groupadd develop
+[root@www samba]# useradd -G develop gentoo
+[root@www samba]# useradd -G develop centos
+[root@www samba]# useradd ubuntu
+[root@www samba]# echo "gentoo" | passwd --stdin gentoo
+[root@www samba]# echo "centos" | passwd --stdin centos
+[root@www samba]# echo "ubuntu" | passwd --stdin ubuntu
+```  
+(4) 给共享目录授权系统权限  
+```
+[root@www samba]# ls -ld /data
+drwxr-xr-x 2 root root 6 Apr 17 22:52 /data
+[root@www samba]# chown .develop /data
+[root@www samba]# ls -ld /data
+drwxr-xr-x 2 root develop 6 Apr 17 22:52 /data
+[root@www samba]# chmod g+w /data
+[root@www samba]# ls -ld /data
+drwxrwxr-x 2 root develop 6 Apr 17 22:52 /data
+```
+(5) 添加samba用户  
+```
+[root@www samba]# smbpasswd -a gentoo
+[root@www samba]# smbpasswd -a centos
+[root@www samba]# smbpasswd -a ubuntu
+```
+(6) 修改samba配置文件   
+```
+[root@www ~]# cd /etc/samba/
+[root@www samba]# cp smb.conf{,.bak}
+[root@www samba]# vim smb.conf
+[global]
+        workgroup = magedu       #samba主机所属工作组
+
+#自定义共享
+[shared]
+        comment = shared
+        path = /data
+#写列表, 此处为系统组
+        write list = @develop
+#访问控制
+        hosts allow = 172.16.
+
+```
+(7) 语法检查
+```
+[root@www samba]# testparm
+``` 
+### 二、客户端
+(1）安装samba-client
+```
+[root@localhost ~]# yum -y install samba-client
+```
+(2) 安装客户端依赖包
+```
+yum install krb5-devel krb5-libs pam_krb5 krb5-workstation -y
+```
+如果不安装，会报以下错误
+```
+[root@localhost ~]# smbclient -L 172.16.0.11 -U gentoo
+smbclient: relocation error: /lib64/libsamba-credentials.so.0: symbol GSS_KRB5_CRED_NO_CI_FLAGS_X, version gssapi_krb5_2_MIT not defined in file libgssapi_krb5.so.2 with link time reference
+
+```
+(3) 验证
+a)查看共享  
+```
+[root@localhost ~]# smbclient -L 172.16.0.11 -U gentoo                          Enter gentoo's password:
+Domain=[MAGEDU #SAMBA主机所属工作组] OS=[Windows 6.1] Server=[Samba 4.4.4]
+
+        Sharename       Type      Comment
+        ---------       ----      -------
+        print$          Disk      Printer Drivers
+        IPC$            IPC       IPC Service (Samba 4.4.4)
+        shared          Disk      shared
+        gentoo          Disk      Home Directories
+Domain=[MAGEDU #SAMBA主机所属工作组] OS=[Windows 6.1] Server=[Samba 4.4.4]
+
+        Server               Comment
+        ---------            -------
+
+        Workgroup            Master
+        ---------            -------
+
+```
+b)用gentoo上传文件  
+```
+[root@localhost ~]# smbclient //172.16.0.11/shared -U gentoo
+Enter gentoo's password:
+Domain=[MAGEDU #SAMBA主机所属工作组] OS=[Windows 6.1] Server=[Samba 4.4.4]
+smb: \> ls
+  .                                   D        0  Mon Apr 17 22:52:59 2017
+  ..                                 DR        0  Mon Apr 17 22:52:59 2017
+
+                41922560 blocks of size 1024. 40704776 blocks available
+smb: \> lcd /etc
+smb: \> put fstab
+putting file fstab as \fstab (25.2 kb/s) (average 25.2 kb/s)
+smb: \> ls
+  .                                   D        0  Mon Apr 17 23:35:43 2017
+  ..                                 DR        0  Mon Apr 17 22:52:59 2017
+  fstab                               A      465  Mon Apr 17 23:35:43 2017
+
+                41922560 blocks of size 1024. 40704688 blocks available
+smb: \> exit
+
+服务端验证: 
+[root@www samba]# ls /data/
+fstab
+```
+c)用ubuntu上传文件  
+```
+[root@localhost ~]# smbclient //172.16.0.11/shared -U ubuntu
+Enter ubuntu's password:
+Domain=[MAGEDU #SAMBA主机所属工作组] OS=[Windows 6.1] Server=[Samba 4.4.4]
+smb: \> ls
+  .                                   D        0  Mon Apr 17 23:35:43 2017
+  ..                                 DR        0  Mon Apr 17 22:52:59 2017
+  fstab                               A      465  Mon Apr 17 23:35:43 2017
+
+                41922560 blocks of size 1024. 40704728 blocks available
+smb: \> lcd /etc
+smb: \> put hosts
+NT_STATUS_ACCESS_DENIED opening remote file \hosts
+提示没有打开hosts文件的权限
+```
+d)验证访问控制  
+为了方便测试,修改服务端配置
+```
+hosts allow = 172.17.
+```  
+客户端验证, 提示无访问权限,证明配置正确
+```
+[root@localhost ~]# smbclient //172.16.0.11/shared -U gentoo
+Enter gentoo's password:
+Domain=[MAGEDU #SAMBA主机所属工作组] OS=[Windows 6.1] Server=[Samba 4.4.4]
+tree connect failed: NT_STATUS_ACCESS_DENIED
+```
+修改为原来的配置
+```
+hosts allow = 172.16.
+```
+
+## 2、搭建一套文件vsftp文件共享服务，共享目录为/ftproot,要求：（描述完整的过程）  
+1)基于虚拟用户的访问形式；  
+2)匿名用户只允许下载，不允许上传；  
+3)禁锢所有的用户于其家目录当中；  
+4)限制最大并发连接数为200:；  
+5)匿名用户的最大传输速率512KB/s  
+6)虚拟用户的账号存储在mysql数据库当中。  
+7)数据库通过NFS进行共享。
+
+>系统  ： CentOS7.2  
+服务器1： 172.16.0.11    vsftpd, mariadb  
+服务器2： 172.16.0.13    nfs(到处mariadb数据目录)  
+
+
+### 一、NFS共享数据库数据目录    
+>nfs server导出/mydata/data目录, 客户端以此目录为其mariadb服务的数据目录,要求mariadb要能启动成功, 并能管理数据  
+ 注意:    
+	1. 两边mysql用户id一致,  且在nfs端要有写权限  
+	2. 初始化是root进行的, 初始化时设置no_root_squash;  初始化完成后, 去掉no_squash  
+
+(1) nfs服务器(13)    
+a) 安装
+```
+[root@localhost ~]# yum -y install nfs-utils
+启动:
+[root@localhost ~]# systemctl start nfs.service
+[root@localhost ~]# ss -tnlp | grep 2049
+LISTEN     0      64           *:2049                     *:*
+LISTEN     0      64          :::2049                    :::*
+```
+b) 准备共享目录并导出   
+```
+[root@localhost ~]# mkdir -p /mydata/data
+[root@localhost ~]# vim /etc/exports.d/mydata.exports
+# 这时可读写, 不压缩root权限(mariadb初始化时需要root权限)
+/mydata/data 172.16.0.0/16(rw,no_root_squash)
+导出: 
+[root@localhost ~]# exportfs -r
+查看导出: 
+[root@localhost ~]# showmount -e 172.16.0.13
+Export list for 172.16.0.13:
+/mydata/data 172.16.0.0/16
+
+```  
+c) 创建mariadb用户，给mariadb用户读写权限
+```
+[root@localhost ~]# id mysql
+id: mysql: no such user
+# 查找mariadb服务器,mysql用户的id为27,此处指定同样的id
+[root@localhost ~]# useradd -r -u 27 -s  /sbin/nologin mysql
+[root@localhost ~]# setfacl -m u:mysql:rwx /mydata/data/
+```  
+(2) nfs客户端(11)  
+a) 安装
+```
+[root@www ~]# yum -y install nfs-utils
+```  
+b) 查看共享目录  
+```
+[root@www ~]# showmount -e 172.16.0.13
+clnt_create: RPC: Port mapper failure - Unable to receive: errno 113 (No route to host)
+报错,关闭服务器的firewalld即可
+[root@www ~]# showmount -e 172.16.0.13
+Export list for 172.16.0.13:
+/mydata/data 172.16.0.0/16
+```  
+c) 创建mariadb数据目录,并挂载远程共享目录  
+```
+[root@www ~]# mkdir -p  /mydata/data
+[root@www ~]# mount -t nfs 172.16.0.13:/mydata/data /mydata/data
+[root@www ~]# mount | grep  nfs
+172.16.0.13:/mydata/data on /mydata/data type nfs4 (rw,relatime,vers=4.0,rsize=65536,wsize=65536,namlen=255,hard,proto=tcp,port=0,timeo=600,retrans=2,sec=sys,clientaddr=172.16.0.11,local_lock=none,addr=172.16.0.13)
+```  
+
+### 二、安装mariadb和pam_mysql
+(1) 安装mariadb
+a) 安装
+```
+[root@www data]# yum -y install mariadb-server
+```  
+b) 移除默认的数据目录  
+```
+[root@www ~]# rm -rf /var/lib/mysql
+```
+c) 创建新的数据目录  
+```
+nfs下为了测试,已经提前创建好
+```
+d) 修改配置文件  
+```
+[root@www ~]# cd /etc/
+[root@www etc]# cp my.cnf{,.bak}
+[root@www etc]# vim my.cnf
+[mysqld]
+datadir=/mydata/data   #修改数据目录
+socket=/mydata/data/mysql.sock   # 修改socket文件路径
+
+[mysqladmin] # 需配置此项,否则调用时会找默认的socket文件
+socket=/mydata/data/mysql.sock
+
+报错信息如下: 
+[root@www ~]# mysqladmin -uroot password "123456"
+mysqladmin: connect to server at 'localhost' failed
+error: 'Can't connect to local MySQL server through socket '/var/lib/mysql/mysql.sock' (2)'
+Check that mysqld is running and that the socket: '/var/lib/mysql/mysql.sock' exists!
+```
+e) 修改客户端配置文件  
+```
+[root@www etc]# vim /etc/my.cnf.d/mysql-clients.cnf
+[mysql]
+#修改socket文件路径
+socket=/mydata/data/mysql.sock
+```
+
+f) 初始化数据  
+```
+[root@www ~]# mysql_install_db --defaults-file=/etc/my.cnf --datadir=/mydata/data --user=mysql
+查看数据，已经在nfs目录中生产数据
+[root@www ~]# ls /mydata/data/
+aria_log.00000001  aria_log_control  mysql  performance_schema  test
+ 
+```
+g) 启动服务  
+```
+[root@www etc]# systemctl restart mariadb.service
+```
+d)设置root密码  
+```
+[root@www ~]# mysqladmin -u root password "123456"
+```
+g)准备数据库  
+```
+[root@www ~]# mysql -uroot -p123456
+Welcome to the MariaDB monitor.  Commands end with ; or \g.
+Your MariaDB connection id is 3
+Server version: 5.5.52-MariaDB MariaDB Server
+
+Copyright (c) 2000, 2016, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+MariaDB [(none)]> CREATE DATABASE vsftpd;
+Query OK, 1 row affected (0.09 sec)
+
+MariaDB [(none)]> use vsftpd;
+Database changed
+MariaDB [vsftpd]> CREATE TABLE users(id int AUTO_INCREMENT NOT NULL PRIMARY KEY,name char(30) NOT NULL,password char(48) binary NOT NULL );
+Query OK, 0 rows affected (0.10 sec)
+
+MariaDB [vsftpd]> DESC users;
++----------+----------+------+-----+---------+----------------+
+| Field    | Type     | Null | Key | Default | Extra          |
++----------+----------+------+-----+---------+----------------+
+| id       | int(11)  | NO   | PRI | NULL    | auto_increment |
+| name     | char(30) | NO   |     | NULL    |                |
+| password | char(48) | NO   |     | NULL    |                |
++----------+----------+------+-----+---------+----------------+
+3 rows in set (0.00 sec)
+
+MariaDB [vsftpd]> INSERT INTO users(name,password) VALUES('han',password('123456'));
+Query OK, 1 row affected (0.02 sec)
+
+MariaDB [vsftpd]> INSERT INTO users(name,password) VALUES('tom',password('123456'));
+Query OK, 1 row affected (0.02 sec)
+
+MariaDB [vsftpd]> SELECT * FROM users;
++----+------+-------------------------------------------+
+| id | name | password                                  |
++----+------+-------------------------------------------+
+|  1 | han  | *6BB4837EB74329105EE4568DDA7DC67ED2CA2AD9 |
+|  2 | tom  | *6BB4837EB74329105EE4568DDA7DC67ED2CA2AD9 |
++----+------+-------------------------------------------+
+2 rows in set (0.00 sec)
+
+MariaDB [vsftpd]> GRANT select ON vsftpd.* TO vsftpd@localhost IDENTIFIED BY '123456';
+Query OK, 0 rows affected (0.01 sec)
+
+MariaDB [vsftpd]> GRANT select ON vsftpd.* TO vsftpd@'127.0.0.1' IDENTIFIED BY '123456';
+Query OK, 0 rows affected (0.00 sec)
+
+MariaDB [vsftpd]> FLUSH PRIVILEGES;
+Query OK, 0 rows affected (0.00 sec)
+
+MariaDB [vsftpd]> \q
+Bye
+
+测试授权:
+[root@www ~]# mysql -uvsftpd -p123456
+Welcome to the MariaDB monitor.  Commands end with ; or \g.
+Your MariaDB connection id is 4
+Server version: 5.5.52-MariaDB MariaDB Server
+
+Copyright (c) 2000, 2016, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+MariaDB [(none)]> SHOW DATABASES;
++--------------------+
+| Database           |
++--------------------+
+| information_schema |
+| test               |
+| vsftpd             |
++--------------------+
+3 rows in set (0.00 sec)
+
+MariaDB [(none)]> SELECT * FROM users;
+ERROR 1046 (3D000): No database selected
+MariaDB [(none)]> USE vsftpd;
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Database changed
+MariaDB [vsftpd]> SELECT * FROM users;
++----+------+-------------------------------------------+
+| id | name | password                                  |
++----+------+-------------------------------------------+
+|  1 | han  | *6BB4837EB74329105EE4568DDA7DC67ED2CA2AD9 |
+|  2 | tom  | *6BB4837EB74329105EE4568DDA7DC67ED2CA2AD9 |
++----+------+-------------------------------------------+
+2 rows in set (0.00 sec)
+
+MariaDB [vsftpd]> \q
+Bye
+
+注意: mariadb已经初始化完成,现在可以将nfs的no_root_squash属性去掉了
+[root@localhost ~]# vim /etc/exports.d/mydata.exports
+/mydata/data 172.16.0.0/16(rw)
+[root@localhost ~]# exportfs -r
+```
+
+(2) 安装pam_mysql  
+
+a)安装开发包组  
+```
+[root@www ~]# yum -y groupinstall "Development Tools" "Server Platfrom Development"
+[root@www ~]# yum -y install pam-devel  mariadb-devel openssl-devel
+```  
+b)编译安装pam_mysql  
+```
+[root@www ~]# tar xf pam_mysql-0.7RC1.tar.gz
+[root@www ~]# cd pam_mysql-0.7RC1
+[root@www pam_mysql-0.7RC1]#  ./configure --with-mysql=/usr --with-openssl=/usr --with-pam=/usr --with-pam-mods-dir=/usr/lib64/security
+[root@www pam_mysql-0.7RC1]# make && make install
+```
+  
+### 三、安装配置配置vsftpd  
+(1) 安装
+```
+[root@www ~]# yum -y install vsftpd
+[root@www ~]# systemctl start vsftpd
+[root@www ~]# ss -tnlp | grep :21
+LISTEN     0      32          :::21                      :::*                   users:(("vsftpd",pid=21825,fd=3))
+```
+(2) 虚拟用户的账号存储在mysql数据库当中  
+a) 新建pam配置文件
+```
+[root@www ~]# cd /etc/pam.d
+[root@www pam.d]# vim vsftpd.mysql
+auth required pam_mysql.so user=vsftpd passwd=123456 host=localhost db=vsftpd table=users usercolumn=name passwdcolumn=password crypt=2
+account required pam_mysql.so user=vsftpd passwd=123456 host=localhost db=vsftpd table=users usercolumn=name passwdcolumn=password crpyt=2
+```
+b)创建要映射的系统用户
+```
+[root@www pam.d]# useradd -s /sbin/nologin -d /ftproot/ vuser
+[root@www pam.d]# ls -ld /ftproot/
+drwx------ 2 vuser vuser 59 Apr 18 21:30 /ftproot/
+# 授权其他用户读写,执行权限
+[root@www pam.d]# chmod go+rx /ftproot/
+[root@www pam.d]# ls -ld /ftproot/
+drwxr-xr-x 2 vuser vuser 59 Apr 18 21:30 /ftproot/
+```
+c)修改vsftpd.conf
+```
+[root@www pam.d]# vim /etc/vsftpd/vsftpd.conf
+#指向新的pam文件
+pam_service_name=vsftpd.mysql
+
+#虚拟用户
+#启用来宾用户
+guest_enable=YES
+guest_username=vuser
+[root@www pam.d]# systemctl restart vsftpd
+```
+d)准备ftp目录
+```
+#去除根目录的写权限,并创建两个目录,其中一个专门用于上传
+[root@www pam.d]# chmod -w /ftproot/
+[root@www pam.d]# mkdir /ftproot/{pub,upload}
+```
+e) 测试虚拟用户是否可以登录
+```
+[root@localhost ~]# yum -y install ftp
+[root@localhost ~]# ftp 172.16.0.11
+Connected to 172.16.0.11 (172.16.0.11).
+220 (vsFTPd 3.0.2)
+Name (172.16.0.11:root): tom
+331 Please specify the password.
+Password:
+530 Login incorrect.
+Login failed.
+```
+登录失败,查看错误信息如下: 
+```
+ pam_mysql - MySQL error (Can't connect to local MySQL server through socket '/var/lib/mysql/mysql.sock' (2))
+```
+郁闷,sock文件好多地方都出错啊!!!!!
+原因: pam_mysql不能读取msyql主配置文件中的关闭socket的配置,
+方法一: 使用默认的/var/lib/mysql/mysql.sock,
+方法二:  创建软连接
+这里使用第二种
+```
+[root@www pam.d]# mkdir -p  /var/lib/mysql
+[root@www pam.d]# ln -s  /mydata/data/mysql.sock /var/lib/mysql/mysql.sock
+```
+重新测试:
+```
+[root@localhost ~]# ftp 172.16.0.11
+Connected to 172.16.0.11 (172.16.0.11).
+220 (vsFTPd 3.0.2)
+Name (172.16.0.11:root): han
+331 Please specify the password.
+Password:
+230 Login successful.
+Remote system type is UNIX.
+Using binary mode to transfer files.
+ftp> ls
+227 Entering Passive Mode (172,16,0,11,244,12).
+150 Here comes the directory listing.
+drwxr-xr-x    2 0        0               6 Apr 18 14:35 pub
+drwxr-xr-x    2 0        0               6 Apr 18 14:35 upload
+226 Directory send OK.
+虚拟帐号登录ftp成功!!!
+```
+f) 给上传目录授权并开启匿名用户上传功能
+```
+[root@www pam.d]#  chown vuser /ftproot/upload/
+[root@www pam.d]# ls -ld /ftproot/upload/
+drwxr-xr-x 2 vuser root 6 Apr 18 22:35 /ftproot/upload/
+[root@www pam.d]# vim /etc/vsftpd/vsftpd.conf
+anon_upload_enable=YES
+重启服务
+[root@www pam.d]# systemctl restart vsftpd
+```
+g) 测试虚拟用户上传功能:
+```
+[root@localhost ~]# ftp 172.16.0.11
+Connected to 172.16.0.11 (172.16.0.11).
+220 (vsFTPd 3.0.2)
+Name (172.16.0.11:root): han
+331 Please specify the password.
+Password:
+230 Login successful.
+Remote system type is UNIX.
+Using binary mode to transfer files.
+ftp> lcd /etc
+Local directory now /etc
+ftp> put fstab
+local: fstab remote: fstab
+227 Entering Passive Mode (172,16,0,11,79,77).
+553 Could not create file.
+ftp> cd upload
+250 Directory successfully changed.
+ftp> put fstab
+local: fstab remote: fstab
+227 Entering Passive Mode (172,16,0,11,189,38).
+150 Ok to send data.
+226 Transfer complete.
+465 bytes sent in 3.7e-05 secs (12567.57 Kbytes/sec)
+ftp> ls
+227 Entering Passive Mode (172,16,0,11,122,90).
+150 Here comes the directory listing.
+-rw-------    1 1003     1004          465 Apr 18 15:20 fstab
+226 Directory send OK.
+服务端查看 
+[root@www pam.d]# ls /ftproot/upload/
+fstab
+```
+经测试: 用户han可以上传到upload目录,但不能上传到根目录(没有权限)
+
+注意： 虚拟用户映射的是匿名用户的权限，需开启匿名用户上传功能;
+       映射的用户对文件系统需有写权限
+
+虚拟用户帐号存储在mysql数据库中,/etc/vsftpd/vsftpd.conf配置如下: 
+```
+#指向新的pam文件
+pam_service_name=vsftpd.mysql
+
+#虚拟用户
+#启用来宾用户
+guest_enable=YES
+guest_username=vuser
+#虚拟用户需要开启匿名用户的上传功能
+anon_upload_enable=YES
+
+```
+因为莫名原因,以下实验更改ftp服务器为: 172.16.0.10  
+
+(3) 匿名用户
+实现功能: 只允许下载,不允许上传  
+
+a) 查看配置文件,不需要修改
+```
+[root@www pam.d]# vim /etc/vsftpd/vsftpd.conf
+#默认已开启
+anonymous_enable=YES
+#自定义匿名目录
+anon_root=/ftproot/pub
+```
+b) 测试
+```
+[root@localhost ~]# lftp  172.16.0.10
+lftp 172.16.0.10:~> cd pub/
+lftp 172.16.0.10:/pub> ls
+-rw-r--r--    1 0        0               0 Apr 18 16:48 test
+lftp 172.16.0.10:/pub> get test
+lftp 172.16.0.10:/pub> lcd /etc
+lcd ok, local cwd=/etc
+lftp 172.16.0.10:/pub> put fstab
+put: Access failed: 550 Permission denied. (fstab)
+lftp 172.16.0.10:/pub> bye
+[root@localhost ~]# ls
+anaconda-ks.cfg  test
+```
+经测试, 可以下载,不能上传     
+
+(4)禁锢所有用户于其家目录中   
+a)修改配置
+```
+chroot_local_user=YES
+```
+b) 取消用户对其家目录的写权限
+```
+[root@localhost pub]# chmod -w /home/centos/
+```
+c)测试
+```
+[root@localhost ~]# lftp -u centos,123456 172.16.0.10
+lftp centos@172.16.0.10:~> ls
+-rw-r--r--    1 1001     1001          465 Apr 18 16:43 fstab
+lftp centos@172.16.0.10:/> cd /etc
+cd: Access failed: 550 Failed to change directory. (/etc)
+```
+将测试,已经锁定在用户家目录,不能切换到其他目录  
+
+(5) 限制并发连接数和匿名用户的最大传输速率  
+```
+max_clients=200  #限制最大并发连接数
+anon_max_rate=512000 #匿名用户的最大传输速率为512KB
+```  
+
+(6) 重新启动服务  
+```
+[root@localhost pub]# systemctl restart vsftpd
+```

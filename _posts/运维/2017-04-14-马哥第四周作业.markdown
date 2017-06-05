@@ -1,0 +1,325 @@
+---
+layout: post
+category: "android"
+title:  "grep命令练习"
+tags: [马哥,Linux]
+---  
+  
+## 1、复制/etc/skel目录为/home/tuser1，要求/home/tuser1及其内部文件的属组和其它用户均没有任何访问权限。  
+```
+[root@localhost tuser1]# cp -r /etc/skel/ /home/tuser1
+[root@localhost tuser1]# ll -d /home/tuser1
+drwxr-xr-x. 2 root root 59 Dec 23 03:05 /home/tuser1
+[root@localhost tuser1]# chmod -R go= /home/tuser1
+[root@localhost tuser1]# ll -d /home/tuser1
+drwx------. 2 root root 59 Dec 23 03:05 /home/tuser1
+[root@localhost tuser1]# ll -A /home/tuser1
+total 12
+-rw-------. 1 root root  18 Dec 23 03:05 .bash_logout
+-rw-------. 1 root root 193 Dec 23 03:05 .bash_profile
+-rw-------. 1 root root 231 Dec 23 03:05 .bashrc
+```  
+知识点: 文件权限管理  
+1. ugo表示法  
+chmod -R go= /home/tuser1
+使用技巧: ugo后面为空时,表示相应权限位为空
+2. 八进制表示法  
+3. 参考其他文件权限  
+## 2、编辑/etc/group文件，添加组hadoop。  
+```
+[root@localhost ~]# vim + /etc/group
+hadoop:x:1011:
+```
+## 3、手动编辑/etc/passwd文件新增一行，添加用户hadoop，其基本组ID为hadoop组的id号；其家目录为/home/hadoop。  
+```
+[root@localhost ~]# vim + /etc/passwd  
+user110:x:1010:1010::/home/user110:/bin/bash
+hadoop:x:1011:1011::/home/hadoop:/bin/bash
+```
+## 4、复制/etc/skel目录为/home/hadoop，要求修改hadoop目录的属组和其它用户没有任何访问权限。   
+ 
+```  
+[root@localhost ~]# cp -r /etc/skel/ /home/hadoop
+[root@localhost ~]# chmod -R go= /home/hadoop
+[root@localhost ~]# ll -d /home/hadoop
+drwx------. 2 root root 59 Dec 23 03:52 /home/hadoop
+[root@localhost ~]# ll -A /home/hadoop
+total 12
+-rw-------. 1 root root  18 Dec 23 03:52 .bash_logout
+-rw-------. 1 root root 193 Dec 23 03:52 .bash_profile
+-rw-------. 1 root root 231 Dec 23 03:52 .bashrc
+
+```
+## 5、修改/home/hadoop目录及其内部所有文件的属主为hadoop，属组为hadoop。  
+```
+[root@localhost ~]# chown -R hadoop:hadoop /home/hadoop/
+[root@localhost ~]# ll -d /home/hadoop/
+drwx------. 2 hadoop hadoop 59 Dec 23 03:52 /home/hadoop/
+[root@localhost ~]# ll -A /home/hadoop/
+total 12
+-rw-------. 1 hadoop hadoop  18 Dec 23 03:52 .bash_logout
+-rw-------. 1 hadoop hadoop 193 Dec 23 03:52 .bash_profile
+-rw-------. 1 hadoop hadoop 231 Dec 23 03:52 .bashrc
+
+```
+## 6、显示/proc/meminfo文件中以大写或小写S开头的行；用两种方式；  
+方法1:  
+```
+[root@localhost ~]# grep '^[Ss]' /proc/meminfo 
+SwapCached:            0 kB
+SwapTotal:        511996 kB
+SwapFree:         511996 kB
+Shmem:              8988 kB
+Slab:              92240 kB
+SReclaimable:      55260 kB
+SUnreclaim:        36980 kB
+```  
+方法2:  
+```  
+[root@localhost ~]# grep -E  '^(S|s)' /proc/meminfo
+SwapCached:            0 kB
+SwapTotal:        511996 kB
+SwapFree:         511996 kB
+Shmem:              8988 kB
+Slab:              92240 kB
+SReclaimable:      55260 kB
+SUnreclaim:        36980 kB
+```
+## 7、显示/etc/passwd文件中其默认shell为非/sbin/nologin的用户；  
+```
+[root@localhost ~]# grep -v '/sbin/nologin'  /etc/passwd | cut -d: -f1,7
+root:/bin/bash
+sync:/bin/sync
+shutdown:/sbin/shutdown
+halt:/sbin/halt
+han:/bin/bash
+user101:/bin/bash
+user102:/bin/bash
+user103:/bin/bash
+user104:/bin/bash
+user105:/bin/bash
+user106:/bin/bash
+user107:/bin/bash
+user108:/bin/bash
+user109:/bin/bash
+user110:/bin/bash
+hadoop:/bin/bash
+```
+## 8、显示/etc/passwd文件中其默认shell为/bin/bash的用户；  
+```
+[root@localhost ~]# grep '/bin/bash' /etc/passwd | cut -d: -f1,7
+root:/bin/bash
+han:/bin/bash
+user101:/bin/bash
+user102:/bin/bash
+user103:/bin/bash
+user104:/bin/bash
+user105:/bin/bash
+user106:/bin/bash
+user107:/bin/bash
+user108:/bin/bash
+user109:/bin/bash
+user110:/bin/bash
+hadoop:/bin/bash
+```
+## 9、找出/etc/passwd文件中的一位数或两位数；  
+```  
+[root@localhost ~]# grep -E  '\<[0-9]{1,2}\>' /etc/passwd
+root:x:0:0:root:/root:/bin/bash
+bin:x:1:1:bin:/bin:/sbin/nologin
+daemon:x:2:2:daemon:/sbin:/sbin/nologin
+adm:x:3:4:adm:/var/adm:/sbin/nologin
+lp:x:4:7:lp:/var/spool/lpd:/sbin/nologin
+sync:x:5:0:sync:/sbin:/bin/sync
+shutdown:x:6:0:shutdown:/sbin:/sbin/shutdown
+halt:x:7:0:halt:/sbin:/sbin/halt
+mail:x:8:12:mail:/var/spool/mail:/sbin/nologin
+operator:x:11:0:operator:/root:/sbin/nologin
+games:x:12:100:games:/usr/games:/sbin/nologin
+ftp:x:14:50:FTP User:/var/ftp:/sbin/nologin
+nobody:x:99:99:Nobody:/:/sbin/nologin
+dbus:x:81:81:System message bus:/:/sbin/nologin
+tss:x:59:59:Account used by the trousers package to sandbox the tcsd daemon:/dev/null:/sbin/nologin
+postfix:x:89:89::/var/spool/postfix:/sbin/nologin
+sshd:x:74:74:Privilege-separated SSH:/var/empty/sshd:/sbin/nologin
+apache:x:48:48:Apache:/usr/share/httpd:/sbin/nologin
+```
+## 10、显示/boot/grub/grub.conf中以至少一个空白字符开头的行；  
+```
+[root@node1 ~]# grep '^[[:space:]]\+' /boot/grub/grub.conf 
+	root (hd0,0)
+	kernel /vmlinuz-2.6.32-642.el6.x86_64 ro root=UUID=1cc68cb8-0de5-4cbf-ad1c-b6ed129b1177 rd_NO_LUKS rd_NO_LVM LANG=en_US.UTF-8 rd_NO_MD SYSFONT=latarcyrheb-sun16 crashkernel=auto  KEYBOARDTYPE=pc KEYTABLE=us rd_NO_DM rhgb quiet
+	initrd /initramfs-2.6.32-642.el6.x86_64.img
+```
+## 11、显示/etc/rc.d/rc.sysinit文件中以#开头，后面跟至少一个空白字符，而后又有至少一个非空白字符的行；  
+``` 
+[root@node1 ~]# grep '^#[[:space:]]\+[^[:space:]]\+'  /etc/rc.d/rc.sysinit 
+# /etc/rc.d/rc.sysinit - run once at boot time
+# Taken in part from Miquel van Smoorenburg's bcheckrc.
+# Check SELinux status
+# Print a text banner.
+# Only read this once.
+# Initialize hardware
+# Set default affinity
+# Load other user-defined modules
+# Load modules (for backward compatibility with VARs)
+# Configure kernel parameters
+# Set the hostname.
+# Sync waiting for storage.
+# Device mapper & related initialization
+# Start any MD RAID arrays that haven't been started yet
+# Remount the root filesystem read-write.
+# Clean up SELinux labels
+# If relabeling, relabel mount points.
+# Mount all other filesystems (except for NFS and /proc, which is already
+# mounted). Contrary to standard usage,
+# filesystems are NOT unmounted in single user mode.
+# The 'no' applies to all listed filesystem types. See mount(8).
+# Check to see if a full relabel is needed
+# Update quotas if necessary
+# Initialize pseudo-random number generator
+# Configure machine if necessary.
+# Clean out /.
+# Do we need (w|u)tmpx files? We don't set them up, but the sysadmin might...
+# Clean up /var.
+# Clean up utmp/wtmp
+# Clean up various /tmp bits
+# Make ICE directory
+# Start up swapping.
+# Set up binfmt_misc
+# Boot time profiles. Yes, this should be somewhere else.
+# Now that we have all of our basic modules loaded and the kernel going,
+# let's dump the syslog ring somewhere so we can find it later
+# create the crash indicator flag to warn on crashes, offer fsck with timeout
+# Let rhgb know that we're leaving rc.sysinit
+```
+## 12、打出netstat -tan命令执行结果中以‘LISTEN’，后或跟空白字符结尾的行；  
+```
+[root@node1 ~]# netstat -tan | grep 'LISTEN[[:space:]]*$'
+tcp        0      0 0.0.0.0:36863               0.0.0.0:*                   LISTEN      
+tcp        0      0 0.0.0.0:111                 0.0.0.0:*                   LISTEN      
+tcp        0      0 0.0.0.0:22                  0.0.0.0:*                   LISTEN      
+tcp        0      0 127.0.0.1:631               0.0.0.0:*                   LISTEN      
+tcp        0      0 127.0.0.1:25                0.0.0.0:*                   LISTEN      
+tcp        0      0 127.0.0.1:6010              0.0.0.0:*                   LISTEN      
+tcp        0      0 :::55626                    :::*                        LISTEN      
+tcp        0      0 :::111                      :::*                        LISTEN      
+tcp        0      0 :::80                       :::*                        LISTEN      
+tcp        0      0 :::22                       :::*                        LISTEN      
+tcp        0      0 ::1:631                     :::*                        LISTEN      
+tcp        0      0 ::1:25                      :::*                        LISTEN      
+tcp        0      0 ::1:6010                    :::*                        LISTEN 
+```
+## 13、添加用户bash, testbash, basher, nologin (此一个用户的shell为/sbin/nologin)，而后找出当前系统上其用户名和默认shell相同的用户的信息；  
+```
+[root@node1 ~]# useradd bash
+[root@node1 ~]# useradd testbash
+[root@node1 ~]# useradd basher
+[root@node1 ~]# useradd -s /sbin/nologin nologin
+[root@node1 ~]# tail -4 /etc/passwd
+bash:x:502:502::/home/bash:/bin/bash
+testbash:x:503:503::/home/testbash:/bin/bash
+basher:x:504:504::/home/basher:/bin/bash
+nologin:x:505:505::/home/nologin:/sbin/nologin
+[root@node1 ~]# grep   -E  '^([^:]+)\>.*\1$' /etc/passwd
+sync:x:5:0:sync:/sbin:/bin/sync
+shutdown:x:6:0:shutdown:/sbin:/sbin/shutdown
+halt:x:7:0:halt:/sbin:/sbin/halt
+bash:x:502:502::/home/bash:/bin/bash
+nologin:x:505:505::/home/nologin:/sbin/nologin
+
+```
+## 14、显示/proc/meminfo文件中以大写或小写S开头的行；用三种方式；  
+方法1:  
+```
+[root@localhost ~]# grep '^[Ss]' /proc/meminfo 
+SwapCached:            0 kB
+SwapTotal:        511996 kB
+SwapFree:         511996 kB
+Shmem:              8988 kB
+Slab:              92240 kB
+SReclaimable:      55260 kB
+SUnreclaim:        36980 kB
+```  
+方法2:  
+```  
+[root@localhost ~]# grep -E  '^(S|s)' /proc/meminfo
+SwapCached:            0 kB
+SwapTotal:        511996 kB
+SwapFree:         511996 kB
+Shmem:              8988 kB
+Slab:              92240 kB
+SReclaimable:      55260 kB
+SUnreclaim:        36980 kB
+```  
+方法3:  
+```
+[root@node1 ~]# grep -i '^s' /proc/meminfo 
+SwapCached:            0 kB
+SwapTotal:        204796 kB
+SwapFree:         204796 kB
+Shmem:              1376 kB
+Slab:             108876 kB
+SReclaimable:      43916 kB
+SUnreclaim:        64960 kB
+
+```
+## 15、显示/etc/passwd文件中其默认shell为非/sbin/nologin的用户；  
+```
+[root@localhost ~]# grep -v '/sbin/nologin'  /etc/passwd | cut -d: -f1,7
+root:/bin/bash
+sync:/bin/sync
+shutdown:/sbin/shutdown
+halt:/sbin/halt
+han:/bin/bash
+user101:/bin/bash
+user102:/bin/bash
+user103:/bin/bash
+user104:/bin/bash
+user105:/bin/bash
+user106:/bin/bash
+user107:/bin/bash
+user108:/bin/bash
+user109:/bin/bash
+user110:/bin/bash
+hadoop:/bin/bash
+```
+## 16、显示/etc/passwd文件中其默认shell为/bin/bash的用户；  
+```
+[root@localhost ~]# grep '/bin/bash' /etc/passwd | cut -d: -f1,7
+root:/bin/bash
+han:/bin/bash
+user101:/bin/bash
+user102:/bin/bash
+user103:/bin/bash
+user104:/bin/bash
+user105:/bin/bash
+user106:/bin/bash
+user107:/bin/bash
+user108:/bin/bash
+user109:/bin/bash
+user110:/bin/bash
+hadoop:/bin/bash
+```
+## 17、找出/etc/passwd文件中的一位数或两位数； 
+```  
+[root@localhost ~]# grep -E  '\<[0-9]{1,2}\>' /etc/passwd
+root:x:0:0:root:/root:/bin/bash
+bin:x:1:1:bin:/bin:/sbin/nologin
+daemon:x:2:2:daemon:/sbin:/sbin/nologin
+adm:x:3:4:adm:/var/adm:/sbin/nologin
+lp:x:4:7:lp:/var/spool/lpd:/sbin/nologin
+sync:x:5:0:sync:/sbin:/bin/sync
+shutdown:x:6:0:shutdown:/sbin:/sbin/shutdown
+halt:x:7:0:halt:/sbin:/sbin/halt
+mail:x:8:12:mail:/var/spool/mail:/sbin/nologin
+operator:x:11:0:operator:/root:/sbin/nologin
+games:x:12:100:games:/usr/games:/sbin/nologin
+ftp:x:14:50:FTP User:/var/ftp:/sbin/nologin
+nobody:x:99:99:Nobody:/:/sbin/nologin
+dbus:x:81:81:System message bus:/:/sbin/nologin
+tss:x:59:59:Account used by the trousers package to sandbox the tcsd daemon:/dev/null:/sbin/nologin
+postfix:x:89:89::/var/spool/postfix:/sbin/nologin
+sshd:x:74:74:Privilege-separated SSH:/var/empty/sshd:/sbin/nologin
+apache:x:48:48:Apache:/usr/share/httpd:/sbin/nologin
+```

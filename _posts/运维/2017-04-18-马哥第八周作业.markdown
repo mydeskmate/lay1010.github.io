@@ -1,0 +1,250 @@
+---
+layout: post
+category: "android"
+title:  "shell脚本练习2"
+tags: [马哥,Linux]
+---
+  
+### 1、写一个脚本，使用ping命令探测172.16.250.1-172.16.250.254之间的所有主机的在线状态；
+在线的主机使用绿色显示；
+不在线的主使用红色显示；  
+```
+#!/bin/bash
+# ping探测主机在线状态
+
+for i in `seq 254`;do
+        if ping -c 1 172.16.0.$i &> /dev/null;then
+                echo -e  "\033[32m172.16.0.$i\033[0m"
+        else
+                echo -e  "\033[31m172.16.0.$i\033[0m"   
+        fi
+done
+
+```
+### 2、如何给网络接口配置多个地址，有哪些方式？  
+```
+(1) 使用ifcongig
+[root@lab1 ~]# ifconfig eno16777736:0 172.16.0.10/16 up
+[root@lab1 ~]# ifconfig
+eno16777736: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 192.168.146.130  netmask 255.255.255.0  broadcast 192.168.146.255
+        ether 00:0c:29:56:c6:51  txqueuelen 1000  (Ethernet)
+        RX packets 17488  bytes 4626694 (4.4 MiB)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 7106  bytes 1489317 (1.4 MiB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+eno16777736:0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 172.16.0.10  netmask 255.255.0.0  broadcast 172.16.255.255
+        ether 00:0c:29:56:c6:51  txqueuelen 1000  (Ethernet)  
+(2) 使用ip命令  
+[root@lab1 ~]# ip addr add 192.168.140.150 dev  eno16777736
+[root@lab1 ~]# ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+2: eno16777736: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+    link/ether 00:0c:29:56:c6:51 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.146.130/24 brd 192.168.146.255 scope global dynamic eno16777736
+       valid_lft 982sec preferred_lft 982sec
+    inet 172.16.0.10/16 brd 172.16.255.255 scope global eno16777736:0
+       valid_lft forever preferred_lft forever
+    inet 192.168.140.150/32 scope global eno16777736
+       valid_lft forever preferred_lft forever
+
+```
+### 3、写一个脚本，完成以下功能
+   (1) 假设某目录(/etc/rc.d/rc3.d/)下分别有K开头的文件和S开头的文件若干；
+   (2) 显示所有以K开头的文件的文件名，并且给其附加一个stop字符串；
+   (3) 显示所有以S开头的文件的文件名，并且给其附加一个start字符串； 
+   (4) 分别统计S开头和K开头的文件各有多少；  
+```
+#!/bin/bash
+# 统计目录中的文件
+
+#分别定义变量表示K开头和S开头的文件数  
+declare -i knum
+declare -i snum
+knum=0
+snum=0
+
+for str in $(ls /etc/rc.d/rc3.d);do
+        if echo $str | grep "^K" &> /dev/null;then
+                echo "$str stop"
+                let knum++
+        else
+                echo "$str start"
+                let snum++
+        fi
+done
+
+echo -e "S开头的文件数:${snum}\nK开头的文件数:${knum}"
+
+```
+### 4、写一个脚本，完成以下功能
+   (1) 脚本能接受用户名作为参数；
+   (2) 计算此些用户的ID之和；  
+```
+#!/bin/bash
+# 计算传入用户的id之和
+
+if [ $# -lt 1 ];then
+        echo "请输入至少一个用户名"
+        exit 1
+fi
+declare -i idsum=0
+
+for name in $@;do
+        if id -u $name &> /dev/null;then
+                let idsum+=$(id -u $name)
+        else
+                echo "${name}这个用户不存在,不参与运算"
+        fi
+done
+
+echo "这些用户的id之和是:$idsum"
+
+执行结果:
+[root@han scripts]# ./user.sh han
+这些用户的id之和是:500
+[root@han scripts]# ./user.sh ha han
+ha这个用户不存在,不参与运算
+这些用户的id之和是:500
+[root@han scripts]# ./user.sh  han mail
+这些用户的id之和是:508
+
+```
+### 5、写一个脚本
+   (1) 传递一些目录给此脚本；
+   (2) 逐个显示每个目录的所有一级文件或子目录的内容类型；
+   (3) 统计一共有多少个目录；且一共显示了多少个文件的内容类型；  
+```
+#!/bin/bash
+#统计传入目录的文件类型
+
+if [ $# -lt 1 ];then
+	echo "请输入至少一个目录"
+	exit 1
+fi
+
+#定义目录数,文件数
+declare -i dnum=0
+declare -i fnum=0
+
+# 循环传入的目录参数	
+for parms in $@;do
+	if [ ! -d $parms ];then
+		echo "${parms}不是目录,请重新输入"
+	fi
+	# 循环某个目录下的一级子目录或文件
+	for files in `ls $parms`;do    
+		if [ -d ${parms}/$files ];then
+		        file ${parms}/${files} 
+			[ $? -eq 0 ]  && let dnum++
+		else
+			file ${parms}/$files 
+			[ $? -eq 0 ] && let fnum++ 
+
+		fi	
+	done
+done
+
+
+echo "全部子目录个数: $dnum"
+echo "显示文件类型的文件数: $fnum"
+
+执行结果
+[root@han scripts]# bash  filetype.sh /root /tmp
+/root/anaconda-ks.cfg: ASCII English text
+/root/Desktop: directory
+/root/Documents: directory
+/root/Downloads: directory
+/root/install.log: ASCII text
+/root/install.log.syslog: ASCII text
+/root/Music: directory
+/root/Pictures: directory
+/root/Public: directory
+/root/scripts: directory
+/root/Templates: directory
+/root/Videos: directory
+/tmp/keyring-Sj3EIa: directory
+/tmp/pulse-9toHfrLBLivN: directory
+/tmp/pulse-uIUgIls6jl24: directory
+全部子目录个数: 12
+显示文件类型的文件数: 3
+
+```
+### 6、写一个脚本
+  通过命令行传递一个参数给脚本，参数为用户名
+  如果用户的id号大于等于500，则显示此用户为普通用户；  
+```
+#!/bin/bash
+#description:判断用户是否普通用户
+#version : 0.1
+#author: han
+#date: 2017-2-22
+
+if [ $# -lt 1 ];then
+        echo "请输入至少一个用户名"
+        exit 1
+fi
+
+if id $1 &> /dev/null;then
+        if [ `id -u $1` -ge 500 ];then
+                echo "$1是普通用户"
+        fi
+fi
+
+执行结果:
+[root@han scripts]# bash commonuser.sh root
+[root@han scripts]# bash commonuser.sh han
+han是普通用户
+```
+### 7、写一脚本，用ping命令测试172.16.250.20-172.16.250.100以内有哪些主机在线，将在线的显示出来；  
+```
+#!/bin/bash
+# ping测试
+# author:han
+
+trap 'echo quit;exit 1' INT
+
+for i in {20..100};do
+        if ping -c 1 -W 1 172.16.250.$i &> /dev/null; then
+                echo "172.16.250.${i} is up"
+        fi
+done
+
+执行结果: 
+[root@han scripts]# bash ping2.sh 
+^Cquit
+```
+### 8、打印九九乘法表； 
+```
+#!/bin/bash
+#description: 九九乘法表
+#author: han
+
+for j in {1..9};do
+#for i in {1..${j}};do   这种方式有问题,获取不到$i的值
+        for i in `seq $j`;do
+                echo -n "$i X $j = $[$i*$j] "
+        done
+        echo 
+done
+
+执行结果:
+[root@han scripts]# bash chengfa.sh 
+1 X 1 = 1 
+1 X 2 = 2 2 X 2 = 4 
+1 X 3 = 3 2 X 3 = 6 3 X 3 = 9 
+1 X 4 = 4 2 X 4 = 8 3 X 4 = 12 4 X 4 = 16 
+1 X 5 = 5 2 X 5 = 10 3 X 5 = 15 4 X 5 = 20 5 X 5 = 25 
+1 X 6 = 6 2 X 6 = 12 3 X 6 = 18 4 X 6 = 24 5 X 6 = 30 6 X 6 = 36 
+1 X 7 = 7 2 X 7 = 14 3 X 7 = 21 4 X 7 = 28 5 X 7 = 35 6 X 7 = 42 7 X 7 = 49 
+1 X 8 = 8 2 X 8 = 16 3 X 8 = 24 4 X 8 = 32 5 X 8 = 40 6 X 8 = 48 7 X 8 = 56 8 X 8 = 64 
+1 X 9 = 9 2 X 9 = 18 3 X 9 = 27 4 X 9 = 36 5 X 9 = 45 6 X 9 = 54 7 X 9 = 63 8 X 9 = 72 9 X 9 = 81
+
+```

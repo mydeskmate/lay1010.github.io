@@ -1,0 +1,427 @@
+---
+layout: post
+category: "android"
+title:  "linux文件管理命令"
+tags: [马哥,Linux]
+---
+  
+## 1. Linux上的文件管理类命令都有那些,其常用的使用方法及其相关示例演示.    
+文件管理工具有cp, mv, rm  
+* cp命令: 复制文件或文件夹    
+#### 语法:  
+cp [OPTION]... [-T] SOURCE DEST    单源复制  
+cp [OPTION]... SOURCE... DIRECTORY  多源复制 
+#### 常用选项:  
+```  
+				-i：交互式复制，即覆盖之前提醒用户确认；
+	       		-f：强制覆盖目标文件；
+	       		-r, -R：递归复制目录；
+	       		-d：复制符号链接文件本身，而非其指向的源文件；
+	       		-a：-dR --preserve=all, archive，用于实现归档；做备份
+	       		--preserv=
+	       			mode：权限
+	       			ownership：属主和属组
+	       			timestamps: 时间戳
+	       			context：安全标签
+	       			xattr：扩展属性
+	       			links：符号链接
+	       			all：上述所有属性  
+```  
+#### 示例:  
+1. 拷贝/etc/fstab到/tmp目录下  
+```  
+[root@node1 ~]# cp /etc/fstab /tmp
+[root@node1 ~]# ls /tmp
+fstab
+```
+2. 拷贝/etc目录到/tmp目录下  
+```  
+[root@node1 ~]# cp -r /etc/ /tmp  
+```  
+  
+* mv命令: 移动或重命名文件  
+#### 语法:  
+mv [OPTION]... [-T] SOURCE DEST  
+mv [OPTION]... SOURCE... DIRECTORY  
+mv [OPTION]... -t DIRECTORY SOURCE..    
+  
+源文件和目标文件在同一目录下，重命名  
+源文件和目标文件不在同一目录下，移动
+#### 选项:  
+```  
+		   mv没有-r选项
+	       常用选项：
+	       		-i：交互式；
+	       		-f：force  
+```
+#### 示例  
+1. 移动家目录下的test1到/tmp下  
+```  
+[root@node1 ~]# ls
+anaconda-ks.cfg  initial-setup-ks.cfg  test1
+[root@node1 ~]# mv test1 /tmp
+[root@node1 ~]# ls /tmp
+etc  fstab  test1
+```    
+  
+2. 重命名test1为test2  
+  
+```  
+[root@node1 ~]# mkdir /tmp/test1
+[root@node1 ~]# mv /tmp/test1 /tmp/test2
+[root@node1 ~]# ls /tmp
+test2
+
+```  
+* rm命令: 删除文件或目录    
+
+#### 语法:  
+rm [OPTION]... FILE...  
+  
+#### 常用选项:  
+```  
+				-i：interactive  交互式
+	    		-f：force   强制
+	    		-r: recursive    递归删除目录  
+```  
+  
+#### 示例:  
+1. 删除/tmp下的test2文件  
+```  
+[root@node1 tmp]# rm test2 
+rm：是否删除普通空文件 "test2"？y
+[root@node1 tmp]# ls
+etc  fstab
+```  
+2. 删除/tmp下的所有文件  
+```  
+[root@node1 tmp]# rm -rf /tmp/*
+[root@node1 tmp]# ls
+[root@node1 tmp]# 
+```  
+  
+3. 删除/tmp下的etc目录  
+```  
+[root@node1 tmp]# ls
+etc
+[root@node1 tmp]# rm -rf /tmp/etc
+[root@node1 tmp]# ls
+[root@node1 tmp]# 
+```  
+
+
+## 2. bash的工作特性之命令执行状态返回值和命令行展开所涉及的内容及其示例演示.  
+  
+* 命令执行状态返回值  
+bash通过状态返回值来输出此结果：   
+ * 成功：0  
+ * 失败：1-255  
+  
+命令执行完成之后，其状态返回值保存于bash的特殊变量$?中；  
+  
+命令正常执行时，有的还会有命令返回值  
+  
+#### 示例:  
+1. 查看命令状态返回值(执行成功) 
+```
+[root@node1 ~]# ls
+anaconda-ks.cfg  initial-setup-ks.cfg
+[root@node1 ~]# echo $?
+0
+```  
+2. 查看命令状态返回值(执行失败) 
+```  
+[root@node1 ~]# filess /etc/issue
+bash: filess: 未找到命令...
+[root@node1 ~]# echo $?
+127
+```  
+  
+
+* 命令行展开      
+~：自动展开为用户的家目录，或指定的用户的家目录；    
+{}：可承载一个以逗号分隔的路径列表，并能够将其展开为多个路径；  
+  
+  
+#### 示例:
+1. 进入家目录  
+```  
+[root@node1 tmp]# cd ~
+[root@node1 ~]# pwd
+/root
+```  
+  
+2. 在/tmp下创建文件a,文件b  
+```  
+[root@node1 ~]# ls /tmp
+[root@node1 ~]# touch /tmp/{a,b}
+[root@node1 ~]# ls /tmp
+a  b
+```  
+
+
+## 3. 请使用命令行展开功能带完成以下练习:  
+(1) 创建/tmp目录下的: a_c,a_d,b_c,b_d  
+```
+[root@node1 ~]# touch /tmp/{a,b}_{c,d}
+[root@node1 ~]# ls /tmp
+a  a_c  a_d  b  b_c  b_d
+```  
+  
+(2) 创建/tmp/mylinux目录下的:  
+![](http://ohfysad7j.bkt.clouddn.com/public/16-12-10/36513929.jpg)
+  
+```  
+[root@node1 ~]# mkdir -pv /tmp/mylinux/{bin,boot/grub,dev,etc/{rc.d/init.d,sysconfig/network-scripts},lib/modules,lib64,proc,sbin,sys,tmp,usr/local/{bin,sbin},var/{lock,log,run}}
+mkdir: 已创建目录 "/tmp/mylinux"
+mkdir: 已创建目录 "/tmp/mylinux/bin"
+mkdir: 已创建目录 "/tmp/mylinux/boot"
+mkdir: 已创建目录 "/tmp/mylinux/boot/grub"
+mkdir: 已创建目录 "/tmp/mylinux/dev"
+mkdir: 已创建目录 "/tmp/mylinux/etc"
+mkdir: 已创建目录 "/tmp/mylinux/etc/rc.d"
+mkdir: 已创建目录 "/tmp/mylinux/etc/rc.d/init.d"
+mkdir: 已创建目录 "/tmp/mylinux/etc/sysconfig"
+mkdir: 已创建目录 "/tmp/mylinux/etc/sysconfig/network-scripts"
+mkdir: 已创建目录 "/tmp/mylinux/lib"
+mkdir: 已创建目录 "/tmp/mylinux/lib/modules"
+mkdir: 已创建目录 "/tmp/mylinux/lib64"
+mkdir: 已创建目录 "/tmp/mylinux/proc"
+mkdir: 已创建目录 "/tmp/mylinux/sbin"
+mkdir: 已创建目录 "/tmp/mylinux/sys"
+mkdir: 已创建目录 "/tmp/mylinux/tmp"
+mkdir: 已创建目录 "/tmp/mylinux/usr"
+mkdir: 已创建目录 "/tmp/mylinux/usr/local"
+mkdir: 已创建目录 "/tmp/mylinux/usr/local/bin"
+mkdir: 已创建目录 "/tmp/mylinux/usr/local/sbin"
+mkdir: 已创建目录 "/tmp/mylinux/var"
+mkdir: 已创建目录 "/tmp/mylinux/var/lock"
+mkdir: 已创建目录 "/tmp/mylinux/var/log"
+mkdir: 已创建目录 "/tmp/mylinux/var/run"
+
+[root@node1 ~]# tree /tmp/mylinux
+/tmp/mylinux
+|-- bin
+|-- boot
+|   `-- grub
+|-- dev
+|-- etc
+|   |-- rc.d
+|   |   `-- init.d
+|   `-- sysconfig
+|       `-- network-scripts
+|-- lib
+|   `-- modules
+|-- lib64
+|-- proc
+|-- sbin
+|-- sys
+|-- tmp
+|-- usr
+|   `-- local
+|       |-- bin
+|       `-- sbin
+`-- var
+    |-- lock
+    |-- log
+    `-- run
+
+24 directories, 0 files
+```
+
+## 4. 文件的元数据信息有哪些,分别表示什么含义,如何查看?如何修改文件的时间戳信息.  
+  
+* 元数据信息有哪些?  
+ 属性,权限,时间戳等  
+  
+* 元数据信息如何查看
+使用stat命令  
+  
+#### 示例:  
+```  
+[root@node1 ~]# stat /etc/issue
+  文件："/etc/issue"
+  大小：23        	块：8          IO 块：4096   普通文件
+设备：803h/2051d	Inode：134220522   硬链接：1
+权限：(0644/-rw-r--r--)  Uid：(    0/    root)   Gid：(    0/    root)
+环境：system_u:object_r:etc_t:s0
+最近访问：2016-12-09 23:05:14.894890846 +0800
+最近更改：2015-12-09 17:59:15.000000000 +0800
+最近改动：2016-11-14 08:54:12.074004823 +0800
+创建时间：-
+```  
+  
+* 修改时间戳信息    
+
+访问时间  access time：2015-12-10 16:12:22.776423693 +0800  最近访问时间  
+  
+更改时间 modify time：2015-12-10 16:12:22.776423693 +0800  数据  
+  
+改动时间 change time：2015-12-10 16:12:22.776423693 +0800  元数据  
+    
+注意: centos7中被优化了,导致访问时间可能不变化  
+数据改变,元数据一定改变  
+  
+touch命令：更改时间戳   
+#### 语法:  
+touch [OPTION]... FILE...  
+  
+#### 选项:  
+```  
+				-c: 指定的文件路径不存在时不予创建；默认创建空文件
+				-a: 仅修改access time；
+				-m：仅修改modify time；
+				-t STAMP  指定更改的时间
+					[[CC]YY]MMDDhhmm[.ss]  
+```  
+#### 示例:  
+1. 修改所有时间戳信息  
+```  
+[root@node1 ~]# stat anaconda-ks.cfg 
+  文件："anaconda-ks.cfg"
+  大小：1209      	块：8          IO 块：4096   普通文件
+设备：803h/2051d	Inode：270678286   硬链接：1
+权限：(0600/-rw-------)  Uid：(    0/    root)   Gid：(    0/    root)
+环境：system_u:object_r:admin_home_t:s0
+最近访问：2016-11-14 01:44:35.851015291 +0800
+最近更改：2016-11-14 09:36:18.782059218 +0800
+最近改动：2016-11-14 09:36:18.782059218 +0800
+创建时间：-
+[root@node1 ~]# touch anaconda-ks.cfg 
+[root@node1 ~]# stat anaconda-ks.cfg 
+  文件："anaconda-ks.cfg"
+  大小：1209      	块：8          IO 块：4096   普通文件
+设备：803h/2051d	Inode：270678286   硬链接：1
+权限：(0600/-rw-------)  Uid：(    0/    root)   Gid：(    0/    root)
+环境：system_u:object_r:admin_home_t:s0
+最近访问：2016-12-10 00:13:17.993151406 +0800
+最近更改：2016-12-10 00:13:17.993151406 +0800
+最近改动：2016-12-10 00:13:17.993151406 +0800
+创建时间：-
+```  
+
+## 5. 如何定义一个命令的别名,如何在命令中引用另一个命令的执行结果?  
+  
+* 定义命令别名   
+##### 当前shell进程有效  
+~]# alias NAME='COMMAND'  
+  
+#### 示例:  
+1. 设置clear的别名为cls  
+```  
+[root@node1 ~]# alias cls=clear
+[root@node1 ~]# alias
+alias cls='clear'
+alias cp='cp -i'
+alias egrep='egrep --color=auto'
+alias fgrep='fgrep --color=auto'
+alias grep='grep --color=auto'
+alias l.='ls -d .* --color=auto'
+alias ll='ls -l --color=auto'
+alias ls='ls --color=auto'
+alias mv='mv -i'
+alias rm='rm -i'
+alias which='alias | /usr/bin/which --tty-only --read-alias --show-dot --show-tilde'
+```  
+##### 开机有效    
+  
+#### 示例:   
+  
+1. 定义clear别名为cls,所有人有效,开机有效  
+
+```
+[root@node1 ~]# vim /etc/bashrc  
+alias cls=clear  
+
+[root@node1 ~]# source /etc/bashrc
+[root@node1 ~]# alias
+alias cls='clear'
+```  
+  
+* 命令应用(命令替换)  
+引用命令的执行结果  
+方式:  
+```  
+$(COMMAND)  
+或`COMMAND`
+```    
+
+#### 示例:  
+ 
+1. 显示日期  
+``` 
+[root@node1 ~]# echo $(date)
+2016年 12月 10日 星期六 00:38:10 CST
+```  
+
+## 6. 显示/var目录下所有以l开头,以一个小写字母结尾,且中间至少出现一位数字(可以有其它字符)的文件或目录.  
+```  
+[root@node1 ~]# ls /var/l*[0-9]*[[:lower:]]
+/var/l12a  /var/l3a  /var/lo2f
+```  
+
+## 7. 显示/etc目录下,以任意一个数字开头,且以非数字结尾的文件或目录.  
+```  
+[root@node1 ~]# ls /etc/[0-9]*[^0-9]
+```  
+  
+## 8. 显示/etc目录下,以非字母开头,后面跟了一个字母以及其它任意长度任意字符的文件或目录.  
+```  
+[root@node1 ~]# ls /etc/[^[:alpha:]][[:alpha:]]*
+```  
+  
+## 9. 在/tmp目录下创建以tfile开头,后跟当前日期和时间的文件,文件名形如: tfile-2016-05-27--09-32-22.  
+```  
+[root@node1 ~]# touch /tmp/tfile-$(date +%Y-%m-%d-%H-%M-%S)
+[root@node1 ~]# ls /tmp/tf*
+/tmp/tfile-2016-12-10-01-01-55  /tmp/tfile-2016-12-10-01-02-24
+/tmp/tfile-2016-12-10-01-02-19
+```  
+
+## 10. 复制/etc目录下所有以p开头,以非数字结尾的文件或目录到/tmp/mytest1目录中.  
+```  
+[root@node1 ~]# mkdir /tmp/mytest1
+[root@node1 ~]# cp -rf /etc/p*[^0-9] /tmp/mytest1
+[root@node1 ~]# ls /tmp/mytest1
+pam.d    pbm2ppa.conf  plymouth      popt.d   prelink.conf.d  profile.d  purple
+passwd   pinforc       pm            postfix  printcap        protocols  python
+passwd-  pki           pnm2ppa.conf  ppp      profile         pulse
+```  
+  
+## 11. 复制/etc目录下所有以.d结尾的文件或目录至/tmp/mytest2目录中.  
+```  
+[root@node1 ~]# mkdir /tmp/mytest2
+[root@node1 ~]# cp -r /etc/*.d /tmp/mytest2
+[root@node1 ~]# ls /tmp/mytest2
+bash_completion.d  ipsec.d         profile.d      rwtab.d
+binfmt.d           ld.so.conf.d    rc0.d          sane.d
+chkconfig.d        libibverbs.d    rc1.d          setuptool.d
+cron.d             logrotate.d     rc2.d          statetab.d
+depmod.d           modprobe.d      rc3.d          sudoers.d
+dnsmasq.d          modules-load.d  rc4.d          sysctl.d
+dracut.conf.d      my.cnf.d        rc5.d          tmpfiles.d
+exports.d          oddjobd.conf.d  rc6.d          usb_modeswitch.d
+gdbinit.d          pam.d           rc.d           xinetd.d
+grub.d             popt.d          request-key.d  yum.repos.d
+init.d             prelink.conf.d  rsyslog.d
+```  
+  
+## 12. 复制/etc/目录下所有以l或m或n开头,以.conf结尾的文件至/tmp/mytest3目录中.    
+
+```  
+[root@node1 ~]# mkdir /tmp/mytest3
+[root@node1 ~]# cp /etc/[lmn]*.conf /tmp/mytest3  
+[root@node1 ~]# ll /tmp/mytest3
+总用量 48
+-rw-r--r--. 1 root root   28 12月 10 01:12 ld.so.conf
+-rw-r-----. 1 root root  191 12月 10 01:12 libaudit.conf
+-rw-r--r--. 1 root root 2391 12月 10 01:12 libuser.conf
+-rw-r--r--. 1 root root   16 12月 10 01:12 locale.conf
+-rw-r--r--. 1 root root  662 12月 10 01:12 logrotate.conf
+-rw-r--r--. 1 root root 5171 12月 10 01:12 man_db.conf
+-rw-r--r--. 1 root root  936 12月 10 01:12 mke2fs.conf
+-rw-r--r--. 1 root root 2620 12月 10 01:12 mtools.conf
+-rw-r--r--. 1 root root 3390 12月 10 01:12 nfsmount.conf
+-rw-r--r--. 1 root root 1717 12月 10 01:12 nsswitch.conf
+-rw-r--r--. 1 root root   91 12月 10 01:12 numad.conf
+```

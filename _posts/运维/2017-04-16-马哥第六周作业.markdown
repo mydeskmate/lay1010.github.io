@@ -1,0 +1,401 @@
+---
+layout: post
+category: "android"
+title:  "vim命令练习"
+tags: [马哥,Linux]
+---   
+
+## 请详细总结vim编辑器的使用并完成以下练习题
+### 1、复制/etc/rc.d/rc.sysinit文件至/tmp目录，将/tmp/rc.sysinit文件中的以至少一个空白字符开头的行的行首加#；  
+```
+[root@han ~]# cp /etc/rc.d/rc.sysinit /tmp
+[root@han ~]# vim /tmp/rc.sysinit
+:%s/^[[:space:]]\+/#&/
+
+效果如下: 
+#    . /etc/sysconfig/network
+fi
+if [ -z "$HOSTNAME" -o "$HOSTNAME" = "(none)" ]; then
+#    HOSTNAME=localhost
+
+```
+### 2、复制/boot/grub/grub.conf至/tmp目录中，删除/tmp/grub.conf文件中的行首的空白字符；  
+```
+[root@han tmp]# cp /boot/grub/grub.conf /tmp
+[root@han tmp]# vim /tmp/grub.conf
+:%s/^[[:space:]]\+//
+
+```
+### 3、删除/tmp/rc.sysinit文件中的以#开头，且后面跟了至少一个空白字符的行行的#和空白字符  
+```
+:%s@^#[[:space:]]\+@@
+
+```
+### 4、为/tmp/grub.conf文件中前三行的行首加#号；
+```
+:1,3s@^@#&@
+```
+### 5、将/etc/yum.repos.d/CentOS-Media.repo文件中所有的enabled=0或gpgcheck=0的最后的0修改为1；
+```
+:%s@\(enabled\|gpgcheck\)=0@\1=1@g
+```
+### 6、每4小时执行一次对/etc目录的备份，备份至/backup目录中，保存的目录名为形如etc-201504020202  
+```
+[root@han ~]# mkdir /backup
+[root@han ~]# crontab -e
+0 */4 * * * /bin/cp -a /etc /backup/etc-$(date +%Y%m%d%H%M)
+```
+### 7、每周2，4，6备份/var/log/messages文件至/backup/messages_logs/目录中，保存的文件名形如messages-20150402
+```
+[root@han ~]# mkdir /backup/messages_logs
+[root@han ~]# crontab -e
+0 0 * * 2,4,6 /bin/tar jcf /backup/messages_logs/messages-$(date +%Y%m%d) /var/log/messages
+```
+### 8、每天每两小时取当前系统/proc/meminfo文件中的所有以S开头的信息至/stats/memory.txt文件中  
+```
+0 */2 * * * grep '^S' /proc/meminfo >> /stats/memory.txt
+```
+### 9、工作日的工作时间内，每两小时执行一次echo "howdy"  
+```
+0 9-17/2 * * 1-5 /bin/echo "howdy"
+```
+脚本编程练习
+### 10、创建目录/tmp/testdir-当前日期时间;   
+```
+#/bin/bash
+#创建目录/tmp/testdir-当前日期时间
+
+curdate=$(date +%Y%m%d)
+if [ -d /tmp/testdir-$curdate ];then
+        echo "目录/tmp/testdir-$curdate已存在"
+else
+        mkdir /tmp/testdir-$curdate
+        echo "目录/tmp/testdir-$curdate创建成功"
+fi
+
+```
+### 11、在此目录创建100个空文件：file1-file100  
+```
+#/bin/bash
+# 创建100个空文件
+
+curdate=$(date +%Y%m%d)
+if [ -d /tmp/testdir-$curdate ];then
+        echo "目录/tmp/testdir-$curdate已存在"
+else
+        mkdir /tmp/testdir-$curdate
+        echo "目录/tmp/testdir-$curdate创建成功"
+fi
+
+for i in {1..100};do
+        if [ -f /tmp/testdir-$curdate/file$i ];then
+                echo "/tmp/testdir-$curdate/file$i已存在"
+        else
+                touch /tmp/testdir-$curdate/file$i
+                echo "/tmp/testdir-$curdate/file$i创建成功"
+        fi
+done
+
+```
+### 12、显示/etc/passwd文件中位于第偶数行的用户的用户名；  
+```
+#!/bin/bash
+# 获取/etc/passwd偶数行的用户名
+file=$1
+/bin/sed -n '2~2p' $file | cut -d: -f1
+
+[root@han scripts]# bash oushu.sh /etc/passwd
+bin
+adm
+sync
+halt
+uucp
+games
+ftp
+dbus
+rpc
+avahi-autoipd
+abrt
+nfsnobody
+ntp
+saslauth
+gdm
+sshd
+han
+
+```
+
+### vim编辑器使用详解  
+vim：
+模式化的编辑器
+```
+基本模式：
+	编辑模式，命令模式
+	输入模式
+	末行模式：
+      内置的命令行接口；
+```  
+打开文件  :
+```
+# vim [options] [file ..]
++#：打开文件后，直接让光标处于第#行的行首；
++/PATTERN：打开文件后，直接让光标处于第一个被PATTERN匹配到的行的行首；
+```
+模式转换:  
+```
+编辑模式：默认模式
+编辑模式 --> 输入模式：
+i：insert, 在光标所在处输入；
+a: append，在光标在处后方输入；
+o：在光标所在处的下方打开一个新行；
+I：在光标所在行的行首输入；
+A：在光标所在行的行尾输入；
+O：在光标所在处的上方打开一个新行；
+
+输入模式 --> 编辑模式
+ESC
+
+编辑模式 --> 末行模式
+:
+
+末行模式 --> 编辑模式
+ESC 
+ESC ESC 没有命令时,需输入两次
+
+```
+关闭文件：  
+```
+ZZ：保存并退出； 编辑模式下
+末行模式:
+:q 退出
+:q! 强制退出，不保存此前的编辑操作
+:wq 保存并退出；
+:w, :q
+:x 保存并退出；
+:w /PATH/TO/SOMEFILE 另存到某个文件
+
+```  
+
+光标跳转：
+```
+	字符间跳转
+	h：左
+	j：下
+	k：上
+	l：右
+	#COMMAND：跳转由#指定的个数的字符；
+	
+	单词间跳转
+	w：下一个单词的词首；
+	e：当前或后一个单词的词尾；
+	b：当前或前一个单词的词首；
+	#COMMAND：跳转由#指定的个数的单词；
+	
+	行首行尾跳转
+	^：跳转至行首的第一个非空白字符；
+	0：跳转至行首；
+	$：跳转至行尾；
+	
+	行间跳转
+	#G：跳转至由#指定的行；
+	1G, gg：第一行；
+	G：最后一行；
+	
+	句间跳转：
+	)
+	(
+	
+	段间跳转
+	}
+	{
+
+``` 
+翻屏：  
+```
+Ctrl+f：向文件尾翻一屏
+Ctrl+b：向文件首部翻一屏
+Ctrl+d：向文件尾部翻半屏
+Ctrl+u：向文件首部翻半屏
+Enter：按行向后翻
+
+```
+vim的编辑命令：
+```
+字符编辑：
+x：删除光标所在处的字符；
+#x：删除光标所在处起始的#个字符；
+X： 删除光标所在处前面的字符
+#X: 删除光标所在处前面的#个字符
+xp：交换光标所在处的字符与其后面的字符的位置；
+
+替换命令(replace)：
+r：替换光标所在处的字符；
+rCHAR
+R: 替换当前光标所在字符开始的n个字符，esc结束替换
+
+删除命令：
+d：删除命令，可结合光标跳转字符，实现范围删除；
+	d$：删除当前光标所在字符到行尾内容
+	d^：删除当前光标所在字符前的字符，直到行首
+	d0：
+	dw：删除到下一个单词的词首
+	de：删除当前光标所在字符，直到词尾
+	db：删除当前光标前的字符，直到词首
+	#COMMAND：
+	3db 向后删除3个单词
+	dd：删除光标所在处的行；
+		#dd：删除光标所处的行起始的共#行；
+注意： 删除的内容保留在缓存区中，最后一个才能被粘贴
+
+粘贴命令(p, put, paste)：
+p：缓冲区中的内容如果为整行，则粘贴在当前光标所在行的下方；否则，则粘贴至当前光标所在处的后方；
+P：缓冲区中的内容如果为整行，则粘贴在当前光标所在行的上方；否则，则粘贴至当前光标所在处的前方；
+
+复制命令(yank, y)：
+y：复制，工作行为相似于d命令；
+	y$
+	y^
+	y0
+	ye
+	yw
+	yb
+	#COMMAND
+	
+	yy：复制一整行
+	#yy：复制#行
+
+改变命令(change, c)：
+编辑模式 --> 输入模式，实现删除操作；与d的模式相同，只是删除后进入输入模式
+	c$
+	c^
+	c0
+	cb
+	ce
+	cw
+	#COMMAND
+	cc：删除光标所在的行，并转换为输入模式；
+	#cc：
+
+其它编辑操作：
+
+可视化模式：
+	v：按字符选定；
+	V：按行选定；
+	ctrl+v : 块选定
+	结合编辑命令使用：d, c, y
+
+撤销(undo)操作：
+u：撤销此前的操作；
+#u：撤销此前的#个操作；最多50个操作
+
+撤销此前的撤销：
+Ctrl+r
+
+重复执行前一个编辑操作：点号
+
+```  
+vim末行模式：
+```
+(1) 地址定界
+:start_pos[,end_pos]
+#：特定的第#行，例如5即第5行；
+#,#：指定行范围，左侧为起始行，右侧为结束行；
+#,+#：指定行范围，左侧为超始行绝对编号，右侧为相对左侧行号的偏移量；例如：3,+7
+.：当前行；
+$：最后一行；
+.,$-1 当前号到倒数第二行
+1,$ 全文
+%：全文 
+/pattern/：从光标所在处起始向文件尾部第一次被模式所匹配到的行；
+/first/,$ 第一次被first匹配的行到最后
+/pat1/,/pat2/：从光标所在处起始，第一次由pat1匹配到的行开始，至第一次由pat2匹配到的行结束之间的所有行；
+注意: 要先把光标定位到第一行,以为模式匹配是从光标起始处开始 
+
+可同编辑命令一同使用，实现编辑操作：
+d
+y
+c
+w /PATH/TO/SOMEFILE：将范围内的文本保存至指定的文件中；
+r /PATH/FROM/SOMEFILE：将指定的文件中的文本读取并插入至指定位置；
+
+(2) 查找
+/PATTERN：从当前光标所在处向文件尾部查找能够被当前模式匹配到的所有字符串；
+?PATTERN：从当前光标所在处向文件首部查找能够被当前模式匹配到的所有字符串；
+n：下一个，与命令方向相同；
+N：上一个，与命令方向相反；
+
+(3) 查找并替换
+s：末行模式的命令；使用格式：
+	s/要查找的内容/替换为的内容/修饰符
+	要查找的内容：可使用正则表达式；
+	替换为的内容：不能使用正则表达式，但可以引用；
+		如果“要查找的内容”部分在模式中使用分组符号：在“替换为的内容”中使用后向引用；
+		直接引用查找模式匹配到的全部文本，要使用&符号；不需要分组
+
+修饰符：
+i：忽略大小写；
+g：全局替换，意味着一行中如果匹配到多次，则均替换；
+默认只匹配第一次出现
+
+可把分隔符替换为其它非常用字符：
+s@@@
+s###
+
+```
+vim的多文件功能：
+```
+多文件：
+vim FILE1 FILE2 ...
+
+在文件间切换：
+:next 下一个
+:prev 上一个
+:first 第一个 
+:last 最后一个 
+
+退出所有文件：
+:wqall 保存所有文件并退出；
+:wall
+:qall
+
+多窗口：
+-o：水平分割窗口
+-O：垂直分割窗口
+
+在窗口间切换：Ctrl+w, ARROW（方向键-上下）
+Ctrl+w , 方向键下
+Ctrl+w , 方向键上
+Ctrl+w , 方向键左
+Ctrl+w , 方向键右
+
+Ctrl+w, s：水平分割窗口
+Ctrl+w, v：垂直分割窗口
+
+```
+定制vim的工作特性：
+```
+注意：在末行模式下的设定，仅对当前vim进程有效；
+永久有效：
+全局：/etc/vimrc
+用户个人：～/.vimrc
+
+1、行号
+显示：set number, 简写为set nu
+取消显示：set nomber, set nonu
+2、括号匹配高亮
+匹配：set showmatch, set sm
+取消：set nosm
+3、自动缩进
+启用：set ai
+禁用：set noai
+4、高亮搜索
+启用：set hlsearch
+禁用：set nohlsearch
+5、语法高亮
+启用：syntax on
+禁用：syntax off 
+6、忽略字符大小写
+启用：set ic
+禁用：set noic
+
+```

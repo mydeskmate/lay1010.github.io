@@ -1,0 +1,667 @@
+---
+layout: post
+category: "android"
+title:  "加密通信过程和CA过程和DNS部署"
+tags: [马哥,Linux]
+---    
+  
+## 1、详细描述一次加密通讯的过程，结合图示最佳。    
+**点对点加密过程如下：**   
+1. 发送方根据单向加密算法计算数据的特征码
+2. 用私钥加密这段特征码，生产数字签名，将数字签名附着在数据后面
+3. 发送方生产临时对称密钥，用对称加密算法结合对称加密密钥加密整段数据（数据+数字签名）
+4. 为保证接收方可以解密，发送方用接收方的公钥加密对称加密密钥，附加在数据后面
+5. 接收方用自己的私钥解密数据（加密的对称密钥），得到密码，这就是密钥交换
+6. 根据对称密钥解密得到数据和数字签名
+7. 用发送方的公钥解密数字签名
+8. 用单向加密算法计算真正数据的特征码，与解密出来的特征码作比较，验证数据完整性   
+
+**整个过程实现了**
+1. 验证发送者身份
+2. 保证数据的完整性
+3. 数据保密性
+4. 密钥交换  
+      
+**遗留问题：** 
+问题: 被其他人伪装成接收者同时和发送者，接收者通信，这叫做中间人攻击，因为发送者和接收者没有接受过通信，获取公钥过程无法保证，这是需引入第三方机构CA-证书颁发机构!  
+
+
+## 2、描述创建私有CA的过程，以及为客户端发来的证书请求进行颁发证书。  
+**创建私有CA的过程：**  
+``` 
+(1) 生成私钥；
+~]# (umask 077; openssl genrsa -out /etc/pki/CA/private/cakey.pem 4096)
+(2) 生成自签证书；
+~]# openssl req -new -x509 -key /etc/pki/CA/private/cakey.pem -out /etc/pki/CA/cacert.pem -days 3655
+-new：生成新证书签署请求；
+-x509：生成自签格式证书，专用于创建私有CA时；
+-key：生成请求时用到的私钥文件路径；
+-out：生成的请求文件路径；如果自签操作将直接生成签署过的证书；
+-days：证书的有效时长，单位是day；
+(3) 为CA提供所需的目录及文件；
+~]# mkdir -pv /etc/pki/CA/{certs,crl,newcerts}
+~]# touch /etc/pki/CA/{serial,index.txt}
+~]# echo 01 > /etc/pki/CA/serial
+```  
+**为客户端的请求颁发证书:**  
+
+```
+要用到证书进行安全通信的服务器，需要向CA请求签署证书：
+步骤：（以httpd为例）
+(1) 用到证书的主机生成私钥；
+~]# mkdir /etc/httpd/ssl
+~]# cd /etc/httpd/ssl
+~]# (umask 077; openssl genrsa -out /etc/httpd/ssl/httpd.key 2048)
+(2) 生成证书签署请求
+~]# openssl req -new -key /etc/httpd/ssl/httpd.key -out /etc/httpd/ssl/httpd.csr -days 365
+(3) 将请求通过可靠方式发送给CA主机；
+scp
+(4) 在CA主机上签署证书；
+~]# openssl ca -in /tmp/httpd.csr -out /etc/pki/CA/certs/httpd.crt -days 365
+查看证书中的信息：(ca和客户机都可以查看)
+~]# openssl x509 -in /etc/pki/CA/certs/httpd.crt -noout -serial -subject
+```
+
+## 3、描述DNS查询过程以及DNS服务器类别。   
+**名称解析过程:**
+浏览器键入域名,先检查本地hosts,没有条目,接着查找本地缓存,缓存中没有,再查找DSN服务器(udp53),dns查找出结果后,通过网络相应给客户端,并将结果存入本地缓冲中,然后客户端用获得ip地址访问目标服务器  
+  
+**解析顺序:**
+1. hosts
+2. 本地缓存(有生存周期) 缓存时间由服务端定义
+3. dns 以www.magedu.com.为例
+(1) 查找本地指定dns,如果查不到
+(2) 本地指定的dns向根查询,根返回.com域的dns地址
+(3) 本地dns向.com的dns查询,返回.magedu域的dns服务器
+(4) 本地dns向.magedu域的dns服务器查询,得到www.magedu.com.的ip
+  
+**DNS服务器类别：**
+负责解析至少一个域：
+* 主名称服务器；
+* 辅助名称服务器；        
+  
+不负责域解析：  
+* 缓存名称服务器；  
+ 
+## 4、搭建一套DNS服务器，负责解析magedu.com域名（自行设定主机名及IP）
+  (1)、能够对一些主机名进行正向解析和逆向解析；
+  (2)、对子域cdn.magedu.com进行子域授权，子域负责解析对应子域中的主机名；
+  (3)、为了保证DNS服务系统的高可用性，请设计一套方案，并写出详细的实施过程  
+  
+环境: CentOS7.2    
+1. 主DNS服务器: 172.16.0.10  
+2. 从DNS服务器：172.16.0.11
+2. 子域DNS服务器: 172.16.0.13  
+3. httpd服务器: 172.16.0.15      
+  
+### 正向解析和逆向解析  
+(1) 安装dns程序   
+
+```
+[root@node1 ~]# yum -y install bind*
+
+```  
+
+(2) 配置hosts  
+
+```
+[root@node1 ~]# vim /etc/hosts
+172.16.0.15     www.magedu.com bbs.magedu.com
+172.16.0.13     www.cdn.magedu.com
+
+```
+(3) 配置主配置文件  
+
+```
+[root@node1 ~]# vim /etc/named.conf
+listen-on port 53 { any; };
+allow-query     { any; };
+dnssec-enable no;
+dnssec-validation no;
+
+[root@node1 ~]# systemctl restart named.service
+
+```
+(4) 定义区域  
+
+```
+[root@node1 ~]# vim /etc/named.rfc1912.zones  
+//正向解析
+zone "magedu.com" IN {
+        type master;
+        file "magedu.com.zone";
+};
+
+//反向解析
+zone "16.172.in-addr.arpa" IN {
+        type master;
+        file "172.16.zone";
+};
+
+
+```  
+(5) 建立区域数据文件  
+修改配置文件:  
+
+```
+[root@node1 ~]# vim /var/named/magedu.com.zone
+$TTL 3600
+$ORIGIN magedu.com.
+@       IN      SOA     ns1.magedu.com. dnsadmin.magedu.com. (
+        2017032701
+        1H
+        10M
+        3D
+        1D )
+        IN      NS      ns1
+ns1     IN      A       172.16.0.10
+www     IN      A       172.16.0.15
+bbs     IN      A       172.16.0.15
+
+
+反向区域文件:  
+[root@node1 ~]# vim /var/named/172.16.zone  
+$TTL 3600
+$ORIGIN 16.172.in-addr.arpa.
+@       IN      SOA     ns1.magedu.com nsadmin.magedu.com (
+                2017032701
+                1H
+                10M
+                3D
+                12H )
+
+        IN      NS      ns1.magedu.com.
+10.0    IN      PTR     ns1.magedu.com.
+15.0    IN      PTR     www.magedu.com.
+15.0    IN      PTR     bbs.magedu.com.
+
+```  
+(6) 权限及属性修改:    
+
+```
+[root@node1 ~]# chgrp named /var/named/magedu.com.zone
+[root@node1 ~]# chmod o= /var/named/magedu.com.zone
+
+[root@node1 ~]# chgrp named /var/named/172.16.zone
+[root@node1 ~]# chmod o= /var/named/172.16.zone
+
+```  
+
+(7)语法检查   
+配置文件语法检查: 
+```
+[root@node1 ~]# named-checkconf
+```  
+检查区域文件:   
+
+```
+[root@node1 ~]# named-checkzone magedu.com /var/named/magedu.com.zone
+zone magedu.com/IN: loaded serial 2017032701
+OK
+
+[root@node1 ~]# named-checkzone 16.172.in-addr.arpa /var/named/172.16.zone
+zone 16.172.in-addr.arpa/IN: loaded serial 2017032701
+OK
+
+```   
+(8) 载入新区域:   
+
+```
+[root@node1 ~]# rndc status
+version: 9.9.4-RedHat-9.9.4-38.el7_3.2 <id:8f9657aa>
+CPUs found: 1
+worker threads: 1
+UDP listeners per interface: 1
+number of zones: 102
+debug level: 0
+xfers running: 0
+xfers deferred: 0
+soa queries in progress: 0
+query logging is OFF
+recursive clients: 0/0/1000
+tcp clients: 0/100
+server is up and running
+[root@node1 ~]# rndc reload
+server reload successful
+[root@node1 ~]# rndc status
+version: 9.9.4-RedHat-9.9.4-38.el7_3.2 <id:8f9657aa>
+CPUs found: 1
+worker threads: 1
+UDP listeners per interface: 1
+number of zones: 102
+debug level: 0
+xfers running: 0
+xfers deferred: 0
+soa queries in progress: 0
+query logging is OFF
+recursive clients: 0/0/1000
+tcp clients: 0/100
+server is up and running
+  
+或者:
+[root@node1 ~]# systemctl reload named.service
+```  
+
+(9) 测试正向解析  
+
+```
+[root@node1 ~]# dig -t A  www.magedu.com @172.16.0.10
+
+; <<>> DiG 9.9.4-RedHat-9.9.4-38.el7_3.2 <<>> -t A www.magedu.com @172.16.0.10
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 18127
+;; flags: qr aa rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 1, ADDITIONAL: 2
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;www.magedu.com.                        IN      A
+
+;; ANSWER SECTION:
+www.magedu.com.         3600    IN      A       172.16.0.15
+
+;; AUTHORITY SECTION:
+magedu.com.             3600    IN      NS      ns1.magedu.com.
+
+;; ADDITIONAL SECTION:
+ns1.magedu.com.         3600    IN      A       172.16.0.10
+
+;; Query time: 1 msec
+;; SERVER: 172.16.0.10#53(172.16.0.10)
+;; WHEN: 一 3月 27 18:16:16 CST 2017
+;; MSG SIZE  rcvd: 93
+
+
+[root@node1 ~]# dig -t A  bbs.magedu.com @172.16.0.10
+
+; <<>> DiG 9.9.4-RedHat-9.9.4-38.el7_3.2 <<>> -t A bbs.magedu.com @172.16.0.10
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 6927
+;; flags: qr aa rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 1, ADDITIONAL: 2
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;bbs.magedu.com.                        IN      A
+
+;; ANSWER SECTION:
+bbs.magedu.com.         3600    IN      A       172.16.0.15
+
+;; AUTHORITY SECTION:
+magedu.com.             3600    IN      NS      ns1.magedu.com.
+
+;; ADDITIONAL SECTION:
+ns1.magedu.com.         3600    IN      A       172.16.0.10
+
+;; Query time: 0 msec
+;; SERVER: 172.16.0.10#53(172.16.0.10)
+;; WHEN: 一 3月 27 18:17:01 CST 2017
+;; MSG SIZE  rcvd: 93
+```
+
+(10) 测试反向解析  　
+
+```
+[root@node1 ~]# dig -x 172.16.0.15 @172.16.0.10
+
+; <<>> DiG 9.9.4-RedHat-9.9.4-38.el7_3.2 <<>> -x 172.16.0.15 @172.16.0.10
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 14910
+;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 1, ADDITIONAL: 2
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;15.0.16.172.in-addr.arpa.      IN      PTR
+
+;; ANSWER SECTION:
+15.0.16.172.in-addr.arpa. 3600  IN      PTR     www.magedu.com.
+15.0.16.172.in-addr.arpa. 3600  IN      PTR     bbs.magedu.com.
+
+;; AUTHORITY SECTION:
+16.172.in-addr.arpa.    3600    IN      NS      ns1.magedu.com.
+
+;; ADDITIONAL SECTION:
+ns1.magedu.com.         3600    IN      A       172.16.0.10
+
+;; Query time: 0 msec
+;; SERVER: 172.16.0.10#53(172.16.0.10)
+;; WHEN: 一 3月 27 19:10:06 CST 2017
+;; MSG SIZE  rcvd: 133
+```  
+
+### 子域授权  
+(1) 父域授权  
+
+```
+[root@node1 ~]# vim /var/named/magedu.com.zone
+增加以下内容:  
+cdn     IN      NS      ns1.cdn
+ns1.cdn IN      A       172.16.0.13
+
+```
+(2) 重载　
+
+```
+[root@node1 ~]# rndc reload
+server reload successful
+
+```
+子域服务器: 
+(3) 修改主配置文件  
+
+```
+[root@node1 ~]# yum -y install bind   bind-utils
+[root@node1 ~]# vim /etc/named.conf  
+ listen-on port 53 { any; };
+dnssec-enable no;
+dnssec-validation no;  
+[root@localhost ~]# systemctl start named.service
+[root@localhost ~]# systemctl status named.service
+[root@localhost ~]# ss -tuln
+```  
+(4) 定义区域    
+
+```
+[root@localhost ~]# vim /etc/named.rfc1912.zones
+zone "cdn.magedu.com" IN {
+        type master;
+        file "cdn.magedu.com.zone";
+};
+
+```
+(5) 配置区域文件  
+
+```  
+$TTL 3600
+$ORIGIN cdn.magedu.com.
+@       IN      SOA     ns1.cdn.magedu.com.  nsadmin.cdn.magedu.com. (
+                2017032701
+                1H
+                10M
+                1D
+                2H )
+        IN      NS      ns1
+ns1     IN      A       172.16.0.13
+www     IN      A       172.16.0.13
+
+[root@localhost ~]# chgrp named /var/named/cdn.magedu.com.zone
+[root@localhost ~]# chmod o= /var/named/cdn.magedu.com.zone
+
+
+```
+(6) 语法检查  
+
+```
+[root@localhost ~]# named-checkconf
+[root@localhost ~]# named-checkzone cdn.magedu.com /var/named/cdn.magedu.com.zone
+zone cdn.magedu.com/IN: loaded serial 2017032701
+OK
+
+```  
+
+(7) 重载  
+
+```
+[root@localhost ~]# rndc reload
+server reload successful
+
+```
+(8) 验证  
+
+```
+[root@localhost ~]# dig -t A www.cdn.magedu.com @172.16.0.13
+
+; <<>> DiG 9.9.4-RedHat-9.9.4-38.el7_3.2 <<>> -t A www.cdn.magedu.com @172.16.0.13
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 34977
+;; flags: qr aa rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 1, ADDITIONAL: 2
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;www.cdn.magedu.com.            IN      A
+
+;; ANSWER SECTION:
+www.cdn.magedu.com.     3600    IN      A       172.16.0.13
+
+;; AUTHORITY SECTION:
+cdn.magedu.com.         3600    IN      NS      ns1.cdn.magedu.com.
+
+;; ADDITIONAL SECTION:
+ns1.cdn.magedu.com.     3600    IN      A       172.16.0.13
+
+;; Query time: 1 msec
+;; SERVER: 172.16.0.13#53(172.16.0.13)
+;; WHEN: Mon Mar 27 19:59:45 CST 2017
+;; MSG SIZE  rcvd: 97
+
+```   
+### 定义区域转发   
+子域服务器:  
+```
+[root@localhost ~]# vim /etc/named.rfc1912.zones
+增加:
+zone "magedu.com" IN {
+        type forward;
+        forward only;
+        forwarders {172.16.0.10;};
+};
+
+[root@localhost ~]# named-checkconf
+[root@localhost ~]# rndc reload
+
+```
+子域解析父域测试：　　
+```
+[root@localhost ~]# dig -t A www.magedu.com @172.16.0.13
+
+; <<>> DiG 9.9.4-RedHat-9.9.4-38.el7_3.2 <<>> -t A www.magedu.com @172.16.0.13
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 4749
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 1, ADDITIONAL: 2
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;www.magedu.com.                        IN      A
+
+;; ANSWER SECTION:
+www.magedu.com.         3600    IN      A       172.16.0.15
+
+;; AUTHORITY SECTION:
+magedu.com.             3600    IN      NS      ns1.magedu.com.
+
+;; ADDITIONAL SECTION:
+ns1.magedu.com.         3600    IN      A       172.16.0.10
+
+;; Query time: 2 msec
+;; SERVER: 172.16.0.13#53(172.16.0.13)
+;; WHEN: Mon Mar 27 20:21:17 CST 2017
+;; MSG SIZE  rcvd: 93
+
+```
+
+**问题1:** 
+[root@node1 ~]# rndc status
+rndc: neither /etc/rndc.conf nor /etc/rndc.key was found
+原因: 修改主配置文件后,未重启服务, 服务没有监听在所有端口
+
+**问题2:**  
+父域解析子域不成功
+```
+[root@node1 ~]# dig -t A www.cdn.magedu.com  @172.16.0.10
+
+; <<>> DiG 9.9.4-RedHat-9.9.4-38.el7_3.2 <<>> -t A www.cdn.magedu.com @172.16.0.10
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: SERVFAIL, id: 6585
+;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;www.cdn.magedu.com.            IN      A
+
+;; Query time: 3 msec
+;; SERVER: 172.16.0.10#53(172.16.0.10)
+;; WHEN: 一 3月 27 20:28:22 CST 2017
+;; MSG SIZE  rcvd: 47
+
+```
+
+方法： /etc/named.conf注释掉近本机查询选项
+子域服务器: 
+```
+[root@ns1 ~]# vim /etc/named.conf 
+//allow-query     { localhost; };
+[root@ns1 ~]# systemctl restart named.service 
+```
+测试:   
+```
+[root@node1 ~]# dig -t A www.cdn.magedu.com  @172.16.0.10
+
+; <<>> DiG 9.9.4-RedHat-9.9.4-38.el7_3.2 <<>> -t A www.cdn.magedu.com @172.16.0.10
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 60945
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 1, ADDITIONAL: 2
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;www.cdn.magedu.com.            IN      A
+
+;; ANSWER SECTION:
+www.cdn.magedu.com.     3490    IN      A       172.16.0.13
+
+;; AUTHORITY SECTION:
+cdn.magedu.com.         3490    IN      NS      ns1.cdn.magedu.com.
+
+;; ADDITIONAL SECTION:
+ns1.cdn.magedu.com.     3490    IN      A       172.16.0.13
+
+```
+
+### DNS主从
+(1) 同步主从服务器时间
+ntpdate  
+(2) 从服务器配置
+```
+[root@localhost ~]# yum -y install bind
+```
+主配置文件: 
+```
+[root@localhost ~]# vim /etc/named.conf
+listen-on port 53 { any; };
+dnssec-enable no;
+dnssec-validation no;
+启动
+[root@localhost ~]# systemctl restart named.service
+
+```
+配置正向区域: 
+```
+[root@localhost ~]# vim /etc/named.rfc1912.zones
+zone "magedu.com" IN {
+        type slave;
+        file "slaves/magedu.com.zone";
+        masters { 172.16.0.10; };
+};
+
+[root@localhost ~]# named-checkconf
+```
+(3) 主服务器配置
+```
+修改定义区域，仅允许从服务器与主服务器同步,默认允许所有主机
+[root@node1 ~]# vim /etc/named.rfc1912.zones
+zone "magedu.com" IN {
+        type master;
+        file "magedu.com.zone";
+        allow-transfer { 172.16.0.11; }; #允许从服务器同步
+};
+
+添加从服务器信息
+[root@node1 ~]# vim /var/named/magedu.com.zone
+.
+.
+.
+        IN      NS      ns2
+ns2     IN      A       172.16.0.11
+.
+.
+.  
+注意: 如果在配置该区域文件时,从服务器已经启动,需修改序列号,否则从服务器无法检测到改变 
+[root@node1 ~]# named-checkzone magedu.com /var/named/magedu.com.zone  
+重载
+[root@node1 ~]# rndc reload
+```
+(4) 从服务器
+```
+重载
+[root@localhost ~]# rndc reload
+查看状态
+[root@localhost ~]# systemctl status named.service
+● named.service - Berkeley Internet Name Domain (DNS)
+   Loaded: loaded (/usr/lib/systemd/system/named.service; disabled; vendor preset: disabled)
+   Active: active (running) since Wed 2017-03-29 23:46:46 CST; 29min ago
+  Process: 2568 ExecStart=/usr/sbin/named -u named $OPTIONS (code=exited, status=0/SUCCESS)
+  Process: 2566 ExecStartPre=/bin/bash -c if [ ! "$DISABLE_ZONE_CHECKING" == "yes" ]; then /usr/sbin/named-checkconf -z /etc/named.conf; else echo "Checking of zone files is disabled"; fi (code=exited, status=0/SUCCESS)
+ Main PID: 2571 (named)
+   CGroup: /system.slice/named.service
+           └─2571 /usr/sbin/named -u named
+
+Mar 30 00:14:55 localhost.localdomain named[2571]: automatic empty zone: 8.B.D.0.1.0.0.2.IP6.ARPA
+Mar 30 00:14:55 localhost.localdomain named[2571]: reloading configuration succeeded
+Mar 30 00:14:55 localhost.localdomain named[2571]: reloading zones succeeded
+Mar 30 00:14:55 localhost.localdomain named[2571]: all zones loaded
+Mar 30 00:14:55 localhost.localdomain named[2571]: running
+Mar 30 00:14:55 localhost.localdomain named[2571]: zone magedu.com/IN: Transfer started.
+Mar 30 00:14:55 localhost.localdomain named[2571]: transfer of 'magedu.com/IN' from 172.16.0.10#53...290
+Mar 30 00:14:56 localhost.localdomain named[2571]: zone magedu.com/IN: transferred serial 2017033001
+Mar 30 00:14:56 localhost.localdomain named[2571]: transfer of 'magedu.com/IN' from 172.16.0.10#53...ec)
+Mar 30 00:14:56 localhost.localdomain named[2571]: zone magedu.com/IN: sending notifies (serial 20...01)
+Hint: Some lines were ellipsized, use -l to show in full.
+检查传输过来的区域文件
+[root@localhost ~]# ll /var/named/slaves/
+total 4
+-rw-r--r--. 1 named named 455 Mar 30 00:14 magedu.com.zone
+```
+(5) 测试
+```
+[root@localhost ~]# dig -t A www.magedu.com @172.16.0.11
+
+; <<>> DiG 9.9.4-RedHat-9.9.4-38.el7_3.2 <<>> -t A www.magedu.com @172.16.0.11
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 24829
+;; flags: qr aa rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 2, ADDITIONAL: 3
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;www.magedu.com.                        IN      A
+
+;; ANSWER SECTION:
+www.magedu.com.         3600    IN      A       172.16.0.15
+
+;; AUTHORITY SECTION:
+magedu.com.             3600    IN      NS      ns1.magedu.com.
+magedu.com.             3600    IN      NS      ns2.magedu.com.
+
+;; ADDITIONAL SECTION:
+ns1.magedu.com.         3600    IN      A       172.16.0.10
+ns2.magedu.com.         3600    IN      A       172.16.0.11
+
+;; Query time: 1 msec
+;; SERVER: 172.16.0.11#53(172.16.0.11)
+;; WHEN: Thu Mar 30 00:21:20 CST 2017
+;; MSG SIZE  rcvd: 127
+
+```
+ 

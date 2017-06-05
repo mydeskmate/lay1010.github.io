@@ -1,0 +1,363 @@
+---
+layout: post
+category: "android"
+title:  "lvs-dr实践"
+tags: [马哥,Linux,集群]
+---  
+
+## 1、结合图形描述LVS的工作原理；  
+### lvs工作流程:   
+ipvs是工作于input链上,监听目标地址上对应的目标端口,如果这个端口对应的服务定义为集群服务, 就强行修改报文的流程,完成转发, 通过postrouting送出去, 为了让后端主机能够接收, 此时需要让RS也具有目标ip地址, 要么修改目标ip地址   
+支持基于TCP，UDP，SCTP，AH，EST，AH_EST等协议的众多服务；   
+  
+### lvs-nat：
+```
+多目标的DNAT：通过将请求报文的目标地址和目标端口修改为挑选出的某RS的RIP和PORT实现转发； 
+			
+			注意: lvs-nat 需开启连接追踪机制, 并发能力有限
+			
+			(1) RIP和DIP必须在同一IP网络, 且使用私网地址，RS的网关应该指向DIP(保证响应报文必须经由VS)；
+			(2) 请求和响应报文都要经由director转发；极高负载的场景中，Director可能会成为系统性能瓶颈；
+			(3) 支持端口映射；
+			(4) VS必须为Linux，RS可以是任意的OS；
+			(5) RS的RIP与Director的DIP必须在同一IP网络；
+			
+			补充: 调度器上需要两块网卡,一个配置vip 一个配置dip  
+```  
+![mark](http://ohfysad7j.bkt.clouddn.com/blog/20170515/224157988.png?imageslim)   
+### lvs-dr：direct routing 直接路由   
+```
+通过为请求报文重新封装一个MAC首部进行转发,源MAC是DIP所在接口的MAC,目标MAC是挑选出的某RS的RIP所在接口的MAC地址；IP首部不会发生变化（源IP为CIP，目标IP始终为VIP）；  
+
+(1) 确保前端路由器将目标IP为VIP的请求报文一定会发送给Director；
+    解决方案：
+        在路由器上静态绑定VIP和Director的MAC地址；
+        禁止RS响应VIP的ARP请求,禁止RS的VIP进行通告
+            (a) arptables； 
+            (b) 修改各RS的内核参数，并把VIP绑定在l0的别名上,实现禁止其响应；
+                arp_ignore, arp_announce
+(2) RS的RIP可以使用私有地址，也可以使用公网地址；
+(3) RS跟Director必须在同一物理网络中；RS的网关必须不能指向DIP
+(4) 请求报文必须由Director调度，但响应报文必须不能经由Director；
+(5) 不支持端口映射；
+(6) 各RS可以使用大多数的OS；一般是linux
+```  
+情形1: RIP  DIP  VIP 都在一个网络, 都是公网IP 地址  
+![mark](http://ohfysad7j.bkt.clouddn.com/blog/20170515/225734483.png?imageslim)   
+情形2: VIP 是公网ip地址,  RIP,DIP是私有地址, 情况要复制些, RS要通过另一个路由出去  
+![mark](http://ohfysad7j.bkt.clouddn.com/blog/20170515/230056188.png?imageslim)  
+注意: 
+一个路由其可以有多个网络接口
+一个交换机可以承载多个ip网络
+所以路由器1和路由器2可以使用同一个
+私网交换机和公网交换机也可以用同一个   
+  
+### lvs-tun：ip tunnel，ip隧道   
+```
+转发方式：不修改请求报文的IP首部（源IP为CIP，目标IP为VIP），而是在原有的IP首部之外再次封装一个IP首部（源IP为DIP，目标IP为RIP）；
+    
+    (1) RIP，DIP，VIP全得是公网地址；
+    (2) RS的网关不能也不可能指向DIP；
+    (3) 请求报文经由Director调度，但响应报文将直接发给CIP；
+    (4) 不支持端口映射；
+    (5) RS的OS必须支持IP隧道功能；
+    
+       注意: 容易超出MTU,  弊端比较大
+```  
+![mark](http://ohfysad7j.bkt.clouddn.com/blog/20170515/230500066.png?imageslim)    
+   
+			
+### lvs-fullnat：非标准模型, ipvs默认不支持,ipvsadm也不支持, nat模型的扩展
+```
+通过同时修改请求报文的源IP地址（cip-->dip）和目标IP地址（vip --> rip）实现转发；
+
+(1) VIP是公网地址；RIP和DIP是私网地址，且通常不在同一IP网络中，但需要通过路由互相通信；
+(2) RS收到的请求报文的源IP为DIP，因此其响应报文将发送给DIP；
+(3) 请求报文和响应报文都必须经由director；
+(4) 支持端口映射；
+(5) RS可使用任意OS；
+```   
+![mark](http://ohfysad7j.bkt.clouddn.com/blog/20170515/230752740.png?imageslim)  
+
+## 2、搭建一套LVS-DR模型的高性能集群，并实现以下功能：
+   (1)、wordpress程序通过nfs共享给各个realserver；
+   (2)、后端realserver中的nginx和php分离    
+
+拓扑:   
+![mark](http://ohfysad7j.bkt.clouddn.com/blog/20170518/010150089.png?imageslim)
+
+>系统: CentOS 6.6
+DR:  dip:172.16.0.31  vip: 172.16.0.40
+RS1: nginx+php-fpm    172.16.0.32
+RS2: nginx+php-fpm    172.16.0.33
+NFS(Wordpress共享):   172.16.0.34
+mysql:                172.16.0.35 
+
+### 一. 配置NFS  
+```
+1. 安装nfs
+[root@localhost ~]# yum -y install nfs-utils rpcbind
+2. 创建共享目录
+[root@localhost ~]# mkdir /data
+[root@localhost ~]# cd /data
+3. 下载wordpress
+[root@localhost data]# wget https://cn.wordpress.org/wordpress-4.7.4-zh_CN.zip
+[root@localhost data]# unzip wordpress-4.7.4-zh_CN.zip
+4. 创建帐号和用户组,并授权（不需要写入权限，此步可省略）
+[root@localhost data]# useradd -r nginx
+[root@localhost data]# chown -R nginx.nginx /data/wordpress
+[root@localhost data]# ll
+total 9036
+drwxr-xr-x. 5 nginx nginx    4096 Apr 23 21:24 wordpress
+5. 配置共享
+[root@localhost data]# vim /etc/exports
+/data/wordpress/ 172.16.0.0/16(rw)
+6. 启动nfs
+[root@localhost data]# service rpcbind start
+[root@localhost data]# service nfs start
+7. 查看共享
+[root@localhost data]# showmount -e 172.16.0.34
+Export list for 172.16.0.34:
+/data/wordpress 172.16.0.0/16
+
+
+```
+备注: 
+验证过程： 随便在rs上面注册了一个centos账号，确实无法在/wordpress目录中创建目录和文件，应用的是nfs服务器上的nfsnobody权限
+```
+[centos@localhost wordpress]$ mkdir test
+mkdir: cannot create directory `test': Permission denied
+[centos@localhost wordpress]$ touch aaaaa
+touch: cannot touch `aaaaa': Permission denied
+```
+之所以可以发布博客是因为，wordrpress是一个php程序，博客中的文章是动态生成的，并没有存放在某个目录下，而是在mysql的wp_posts表中， 在该表上可以查看到刚刚发布的博客文章
+另： php-fpm工作进程是以apache用户运行的，该用户对当前的nfs共享目录，权限应用的也是nfsnobody的权限
+因此在本例wordprss的部署中nginx和php-fpm都没有对用户权限进行特殊设置，不能写入到nfs共享目录
+  
+### 二. 安装mysql   
+```
+#安装mysql,并创建授权wordpress帐号
+[root@localhost ~]# yum -y install mysql-server
+[root@localhost ~]# service mysqld start
+[root@localhost ~]# mysql
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 6
+Server version: 5.1.73 Source distribution
+
+Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> create database wpdb;
+Query OK, 1 row affected (0.00 sec)
+
+mysql> grant all on wpdb.* to 'wpuser'@'172.16.%' identified by '123456';
+Query OK, 0 rows affected (0.00 sec)
+
+mysql> flush privileges;
+Query OK, 0 rows affected (0.00 sec)
+
+mysql> exit
+Bye
+
+```
+
+### 三. 在rs1,rs2上配置nginx+php-fpm  
+```
+1. 配置nginx的yum源
+[root@localhost ~]# vim /etc/yum.repos.d/nginx.repo
+[nginx]
+name=nginx repo
+baseurl=http://nginx.org/packages/centos/6/$basearch/
+gpgcheck=0
+enabled=1
+
+
+2. yum安装相关服务
+[root@localhost ~]# yum -y install nginx php-fpm php-mysql nfs-utils  
+
+3. 创建wordpress目录并挂载wordpress共享目录
+[root@localhost ~]# mkdir /wordpress
+[root@localhost ~]# mount -t nfs 172.16.0.34:/data/wordpress /wordpress
+
+4. 配置nginx配置文件   
+[root@localhost ~]# vim /etc/nginx/conf.d/wordpress.conf
+server
+{
+        listen 80 default_server;
+        server_name www.magedu.com;
+        root /wordpress/;
+        index index.php index.html index.htm;
+        location / {
+        }
+
+        location ~ \.php$ {
+                fastcgi_pass 127.0.0.1:9000;
+                fastcgi_index index.php;
+                fastcgi_param SCRIPT_FILENAME
+/wordpress/$fastcgi_script_name;
+                include fastcgi_params;
+        }
+}  
+
+5. 启动nginx
+[root@localhost conf.d]# service nginx start  
+
+6. 启动php-fpm
+[root@localhost conf.d]# service php-fpm start  
+
+7. 准备rs上的lvs脚本并执行
+[root@localhost ~]# cat lvs-rs.sh
+#!/bin/bash
+# desc: lvs-dr rs scripts
+# han
+
+vip=172.16.0.40
+
+case $1 in
+start)
+        echo "正在配置lvs Realserver..."
+        #配置虚拟ip
+        ifconfig lo:0 $vip netmask 255.255.255.255 broadcast $vip up
+        #从哪个接口进来, 就从哪个接口出去, 以保证响应报文源ip是vip
+        route add -host $vip dev lo:0
+
+
+        #限制所有接口的响应级别
+        echo 1 > /proc/sys/net/ipv4/conf/all/arp_ignore
+        #为以防万一,再调一个接口限制响应级别,理论上不需要,约定俗成的做法
+        echo 1 > /proc/sys/net/ipv4/conf/lo/arp_ignore
+
+        #限制所有接口的通告级别
+        echo 2 > /proc/sys/net/ipv4/conf/all/arp_announce
+        #为以防万一,再调一个接口限制通告级别,理论上不需要,约定俗成的做法
+        echo 2 > /proc/sys/net/ipv4/conf/lo/arp_announce
+        ;;
+stop)
+        echo "正在停止lvs Realserver..."
+        ifconfig lo:0 down
+
+        echo 0 > /proc/sys/net/ipv4/conf/all/arp_ignore
+        echo 0 > /proc/sys/net/ipv4/conf/lo/arp_ignore
+        echo 0 > /proc/sys/net/ipv4/conf/all/arp_announce
+        echo 0 > /proc/sys/net/ipv4/conf/lo/arp_announce
+        ;;
+*)
+        echo "Usage: $0 (start|stop)"
+        exit 1
+esac
+
+[root@localhost ~]# chmod +x lvs-rs.sh
+[root@localhost ~]# ./lvs-rs.sh start
+正在配置lvs Realserver...
+[root@localhost ~]# ifconfig
+eth0      Link encap:Ethernet  HWaddr 00:0C:29:9C:AA:F7
+          inet addr:172.16.0.32  Bcast:172.16.0.255  Mask:255.255.255.0
+          inet6 addr: fe80::20c:29ff:fe9c:aaf7/64 Scope:Link
+          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+          RX packets:30200 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:19649 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000
+          RX bytes:31501521 (30.0 MiB)  TX bytes:1459483 (1.3 MiB)
+
+lo        Link encap:Local Loopback
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          inet6 addr: ::1/128 Scope:Host
+          UP LOOPBACK RUNNING  MTU:65536  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0
+          RX bytes:0 (0.0 b)  TX bytes:0 (0.0 b)
+
+lo:0      Link encap:Local Loopback
+          inet addr:172.16.0.40  Mask:255.255.255.255
+          UP LOOPBACK RUNNING  MTU:65536  Metric:1
+```
+
+### 四．配置director
+
+```
+1. 安装ipvsadm
+[root@localhost ~]# yum -y install ipvsadm
+
+2. 在外网网卡配置vip
+[root@localhost ~]# ifconfig eth0:0 172.16.0.40 netmask 255.255.255.255 broadcast 172.16.0.40
+[root@localhost ~]# ifconfig
+eth0      Link encap:Ethernet  HWaddr 00:0C:29:90:D1:68
+          inet addr:172.16.0.31  Bcast:172.16.255.255  Mask:255.255.0.0
+          inet6 addr: fe80::20c:29ff:fe90:d168/64 Scope:Link
+          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+          RX packets:5762 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:3349 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000
+          RX bytes:6405520 (6.1 MiB)  TX bytes:269286 (262.9 KiB)
+
+eth0:0    Link encap:Ethernet  HWaddr 00:0C:29:90:D1:68
+          inet addr:172.16.0.40  Bcast:172.16.0.40  Mask:255.255.255.255
+          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+
+lo        Link encap:Local Loopback
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          inet6 addr: ::1/128 Scope:Host
+          UP LOOPBACK RUNNING  MTU:65536  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0
+          RX bytes:0 (0.0 b)  TX bytes:0 (0.0 b)
+
+3. 添加集群规则
+[root@localhost ~]# ipvsadm -A -t 172.16.0.40:80 -s rr
+#此处因为是rr算法,权重不起作用
+[root@localhost ~]# ipvsadm -a -t 172.16.0.40:80 -r 172.16.0.32 -g -w 1
+[root@localhost ~]# ipvsadm -a -t 172.16.0.40:80 -r 172.16.0.33 -g -w 2
+[root@localhost ~]# ipvsadm -Ln
+IP Virtual Server version 1.2.1 (size=4096)
+Prot LocalAddress:Port Scheduler Flags
+  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn
+TCP  172.16.0.40:80 rr
+  -> 172.16.0.32:80               Route   1      0          0
+  -> 172.16.0.33:80               Route   2      0          0
+
+```
+
+### 五. 安装配置wordpress(nfs服务器)
+```
+1. 准备wordpress主配置文件
+[root@localhost ~]# cd /data/wordpress
+[root@localhost wordpress]# cp wp-config-sample.php wp-config.php
+[root@localhost wordpress]# vim wp-config.php
+/** WordPress数据库的名称 */
+define('DB_NAME', 'wpdb');
+
+/** MySQL数据库用户名 */
+define('DB_USER', 'wpuser');
+
+/** MySQL数据库密码 */
+define('DB_PASSWORD', '123456');
+
+/** MySQL主机 */
+define('DB_HOST', '172.16.0.35');
+
+```
+![mark](http://ohfysad7j.bkt.clouddn.com/blog/20170517/233735943.png?imageslim)
+![mark](http://ohfysad7j.bkt.clouddn.com/blog/20170518/000702528.png?imageslim)
+![mark](http://ohfysad7j.bkt.clouddn.com/blog/20170518/000847091.png?imageslim)
+![mark](http://ohfysad7j.bkt.clouddn.com/blog/20170518/000941178.png?imageslim)
+### 六. 验证lvs
+多次刷新页面
+```
+[root@localhost ~]# ipvsadm -Ln
+IP Virtual Server version 1.2.1 (size=4096)
+Prot LocalAddress:Port Scheduler Flags
+  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn
+TCP  172.16.0.40:80 rr
+  -> 172.16.0.32:80               Route   1      3          3
+  -> 172.16.0.33:80               Route   2      2          4
+
+```
+可以看到两台服务器的活动连接数和非活动连接数大致相等
+

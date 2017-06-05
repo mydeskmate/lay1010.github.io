@@ -1,0 +1,599 @@
+---
+layout: post
+category: "android"
+title:  "LNMP编译安装（有错误-立此存照）"
+tags: [马哥,Linux,lnmp]
+---  
+
+## 1、源码编译安装LNMP架构环境；  
+## 2、编写一个脚本完成以下功能：  
+   (1)、一键搭建LNMP源码编译环境；  
+   (2)、可通过在脚本后面跟上一些参数来自定义安装目录等其他选项。  
+   
+> 系统： CentOS 7.2  
+IP: 172.16.0.11   
+版本: nginx-1.10.3    php-5.6.30     mysql-5.6.30
+
+### 一.安装开发包组
+```
+~]# yum -y groupinstall "Development Tools" "Server Platform Development"
+```
+### 二.编译安装nginx-1.10.3  
+(1) 安装依赖包
+```
+~]# yum -y install openssl-devel pcre-devel zlib-devel
+```
+(2) 创建nginx用户和组
+```
+~]# useradd -r nginx
+```
+(3) 编译安装 
+```
+~]# tar xf nginx-1.10.3.tar.gz
+~]# cd nginx-1.10.3/
+]# ./configure --prefix=/usr/local/nginx --conf-path=/etc/nginx/nginx.conf --user=nginx --group=nginx --error-log-path=/var/log/nginx/error.log --http-log-path=/var/log/nginx/access.log --pid-path=/var/run/nginx/nginx.pid --lock-path=/var/lock/nginx.lock --with-http_ssl_module --with-http_gzip_static_module --with-debug --with-http_stub_status_module
+]# make && make install
+```
+
+(4) 启动nginx
+```
+]# /usr/local/nginx/sbin/nginx
+```
+(5) 测试页: 
+![mark](http://ohfysad7j.bkt.clouddn.com/blog/20170507/024736778.png?imageslim)
+
+**问题1： 重启后执行/usr/local/nginx/sbin/nginx报错，使用启动脚本或者unit也无法启动**
+```
+]# /usr/local/nginx/sbin/nginx
+[root@localhost ~]# nginx: [emerg] open() "/var/run/nginx/nginx.pid" failed (2: No such file or directory)
+```
+**原因： 系统中没有/var/run/nginx目录，手动创建，即可执行成功，但/var/run/nginx下面的目录重启后就没有了，所以我觉得pid目录设置为/var/run/nginx.pid会好一些，下面用另外一种方法解决，在nginx启动脚本中创建该目录**
+
+(5) nginx开机启动(启动脚本)
+```
+]# vim /etc/rc.d/init.d/nginx
+#! /bin/bash
+#
+# nginx - this script starts and stops the nginx daemon
+#
+# chkconfig:   - 85 15
+# description:  Nginx is an HTTP(S) server, HTTP(S) reverse \
+#               proxy and IMAP/POP3 proxy server
+#
+# processname: nginx
+# config:      /etc/nginx/nginx.conf
+# pidfile:     /var/run/nginx/nginx.pid
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+# Source networking configuration.
+. /etc/sysconfig/network
+
+# Check that networking is up.
+[ "$NETWORKING" = "no" ] && exit 0
+
+nginx="/usr/local/nginx/sbin/nginx"
+prog=$(basename $nginx)
+
+NGINX_CONF_FILE="/etc/nginx/nginx.conf"
+
+[ -f /etc/sysconfig/nginx ] && . /etc/sysconfig/nginx
+
+lockfile=/var/lock/nginx.lock
+#解决开机后没有/var/run/nginx/nginx.pid的问题
+[ ! -d /var/run/nginx ] && mkdir /var/run/nginx
+
+start() {
+    [ -x $nginx ] || exit 5
+    [ -f $NGINX_CONF_FILE ] || exit 6
+    echo -n $"Starting $prog: "
+    daemon $nginx -c $NGINX_CONF_FILE
+    retval=$?
+    echo
+    [ $retval -eq 0 ] && touch $lockfile
+    return $retval
+}
+
+stop() {
+    echo -n $"Stopping $prog: "
+    killproc $prog -QUIT
+    retval=$?
+    echo
+    [ $retval -eq 0 ] && rm -f $lockfile
+    return $retval
+}
+
+restart() {
+    configtest || return $?
+    stop
+    sleep 1
+    start
+}
+
+reload() {
+    configtest || return $?
+    echo -n $"Reloading $prog: "
+    killproc $nginx -HUP
+    RETVAL=$?
+    echo
+}
+
+force_reload() {
+    restart
+}
+
+configtest() {
+  $nginx -t -c $NGINX_CONF_FILE
+}
+
+rh_status() {
+    status $prog
+}
+
+rh_status_q() {
+    rh_status >/dev/null 2>&1
+}
+
+case "$1" in
+    start)
+        rh_status_q && exit 0
+        $1
+        ;;
+    stop)
+        rh_status_q || exit 0
+        $1
+        ;;
+    restart|configtest)
+        $1
+        ;;
+    reload)
+        rh_status_q || exit 7
+        $1
+        ;;
+    force-reload)
+        force_reload
+        ;;
+    status)
+        rh_status
+        ;;
+    condrestart|try-restart)
+        rh_status_q || exit 0
+            ;;
+    *)
+        echo $"Usage: $0 {start|stop|status|restart|condrestart|try-restart|reload|force-reload|configtest}"
+        exit 2
+esac
+```
+备注: 以上脚本加入了一行,以解决开机后没有/var/run/nginx/nginx.pid的问题, 不需要时可删除
+```
+[ ! -d /var/run/nginx ] && mkdir /var/run/nginx
+```
+授权
+```
+]# chmod +x /etc/rc.d/init.d/nginx
+```
+测试脚本:
+```
+[root@localhost init.d]# service nginx stop
+Stopping nginx (via systemctl):                            [  OK  ]
+[root@localhost init.d]# service nginx start
+Starting nginx (via systemctl):                            [  OK  ]
+[root@localhost init.d]# service nginx status
+● nginx.service - SYSV: Nginx is an HTTP(S) server, HTTP(S) reverse proxy and IMAP/POP3 proxy server
+   Loaded: loaded (/etc/rc.d/init.d/nginx; bad; vendor preset: disabled)
+   Active: active (running) since Sun 2017-05-07 15:40:44 CST; 5s ago
+     Docs: man:systemd-sysv-generator(8)
+  Process: 1382 ExecStop=/etc/rc.d/init.d/nginx stop (code=exited, status=0/SUCCESS)
+  Process: 1413 ExecStart=/etc/rc.d/init.d/nginx start (code=exited, status=0/SUCCESS)
+ Main PID: 1420 (nginx)
+   CGroup: /system.slice/nginx.service
+           ├─1420 nginx: master process /usr/local/nginx/sbin/nginx -c /etc/n...
+           └─1422 nginx: worker process
+
+May 07 15:40:44 localhost.localdomain systemd[1]: Starting SYSV: Nginx is an ...
+May 07 15:40:44 localhost.localdomain nginx[1413]: Starting nginx: [  OK  ]
+May 07 15:40:44 localhost.localdomain systemd[1]: PID file /var/run/nginx/ngi...
+May 07 15:40:44 localhost.localdomain systemd[1]: Started SYSV: Nginx is an H...
+Hint: Some lines were ellipsized, use -l to show in full.
+```
+设置开机自启动
+```
+]# chkconfig --add nginx
+]# chkconfig nginx on
+]# chkconfig --list nginx
+
+Note: This output shows SysV services only and does not include native
+      systemd services. SysV configuration data might be overridden by native
+      systemd configuration.
+
+      If you want to list systemd services use 'systemctl list-unit-files'.
+      To see services enabled on particular target use
+      'systemctl list-dependencies [target]'.
+
+nginx           0:off   1:off   2:on    3:on    4:on    5:on    6:off
+```
+重启服务器查看效果
+```
+]# ss -tnl
+State      Recv-Q Send-Q Local Address:Port               Peer Address:Port     
+LISTEN     0      128          *:80                       *:*
+
+```
+
+(6) unit自启动
+配置unit
+```
+]# cd /usr/lib/systemd/system
+]# vim nginx.service
+[Unit]
+Description=nginx - high performance web server
+Documentation=http://nginx.org/en/docs/
+After=network.target remote-fs.target nss-lookup.target
+
+[Service]
+Type=forking
+PIDFile=/var/run/nginx/nginx.pid
+ExecStartPre=/usr/local/nginx/sbin/nginx -t -c /etc/nginx/nginx.conf
+ExecStart=/usr/local/nginx/sbin/nginx -c /etc/nginx/nginx.conf
+ExecReload=/bin/kill -s HUP $MAINPID
+ExecStop=/bin/kill -s QUIT $MAINPID
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+```  
+同样为了解决开机无法创建pid的问题,可修改如下:
+```
+...
+#替换原来的ExecStartPre
+ExecStartPre=[ ! -d /var/run/nginx ] && /usr/bin/mkdir  /var/run/nginx
+...
+```
+开机自启动
+```
+]# systemctl enable nginx.service
+```
+测试
+```
+[root@localhost system]# systemctl start nginx.service
+[root@localhost system]# ss -tnl
+State      Recv-Q Send-Q Local Address:Port               Peer Address:Port     
+LISTEN     0      128          *:80                       *:*
+[root@localhost system]# systemctl stop nginx.service
+[root@localhost system]# ss -tnl
+State      Recv-Q Send-Q Local Address:Port               Peer Address:Port     
+LISTEN     0      128          *:22                       *:*
+LISTEN     0      100    127.0.0.1:25                       *:*                 
+LISTEN     0      128         :::22                      :::*
+LISTEN     0      100        ::1:25                      :::*
+重启:
+[root@localhost ~]# ss -tnl
+State      Recv-Q Send-Q Local Address:Port               Peer Address:Port     
+LISTEN     0      128          *:80                       *:*
+```
+
+### 三.安装mysql-5.6.30 
+(1) 下载mysql   
+```
+]# cd /usr/local/src
+]# wget http://dev.mysql.com/get/Downloads/MySQL-5.6/mysql-5.6.30.tar.gz
+```  
+(2) 安装编译源码所需的工具和库    
+```
+]# yum -y install cmake ncurses-devel
+```
+(3) 设置MySQL用户和组  
+```
+]# useradd -r mysql
+```
+(4) 编译安装   
+```
+]# cd /usr/local/src
+]# tar xf mysql-5.6.30.tar.gz
+]# cd mysql-5.6.30/
+]# cmake -DCMAKE_INSTALL_PREFIX=/usr/local/mysql -DMYSQL_UNIX_ADDR=/usr/local/mysql/mysql.sock -DDEFAULT_CHARSET=utf8 -DDEFAULT_COLLATION=utf8_general_ci -DWITH_INNOBASE_STORAGE_ENGINE=1 -DWITH_MYISAM_STORAGE_ENGINE=1 -DWITH_MEMORY_STORAGE_ENGINE=1 -DWITH_PARTITION_STORAGE_ENGINE=1 -DMYSQL_DATADIR=/data/mysqldb -DMYSQL_TCP_PORT=3306 -DENABLE_DOWNLOADS=1 -DEXTRA_CHARSETS=all -DENABLED_LOCAL_INFILE=1 -DWITH_READLINE=1
+
+(注：重新运行配置，需要删除CMakeCache.txt文件 rm CMakeCache.txt )   
+]# make -j 4 && make install  
+```
+(5) 初始化数据库   
+```
+]# mkdir -p /data/mysqldb      #创建数据库数据目录  
+]# chown -R mysql.mysql /usr/local/mysql   # 给程序目录授权,否则socket文件无法写入到该目录
+]# chown -R mysql.mysql /data/mysqldb/   #给数据目录授权
+]# cd /usr/local/mysql/
+]# ./scripts/mysql_install_db --user=mysql --datadir=/data/mysqldb   
+
+
+参考: /usr/local/mysql/scripts/mysql_install_db --defaults-file=/etc/my.cnf --basedir=/usr/local/mysql --datadir=/usr/local/mysql/data --user=mysql
+```  
+(6) 准备mysql配置文件   
+```
+]# cp /usr/local/mysql/support-files/my-default.cnf /etc/my.cnf    （注：如果/etc/my.cnf文件存在，则覆盖。）  
+]# vim /etc/my.cnf
+[mysqld]
+...
+datadir = /data/mysqldb
+innodb_file_per_table = ON
+skip_name_resolve = ON
+...
+```
+(7) 复制mysql启动脚本  
+```
+]# cp support-files/mysql.server /etc/rc.d/init.d/mysqld
+]# sed  -i 's@^basedir=@basedir=/usr/local/mysql@' /etc/init.d/mysqld
+]# sed  -i 's@^datadir=@datadir=/data/mysqldb@' /etc/init.d/mysqld
+
+```
+(8) 启动mysql服务并设置开机自启动   
+```
+]# service mysqld start
+Starting MySQL... SUCCESS!
+]# chkconfig --add mysqld
+]# chkconfig --level 35 mysqld on
+
+```
+
+查看是否启动
+```
+[root@localhost mysqldb]# ss -tnlp | grep 3306
+LISTEN     0      80          :::3306                    :::*                   users:(("mysqld",pid=2812,fd=10))
+
+```
+检查开机启动
+```
+]# ss -tnlp | grep 3306
+LISTEN     0      80          :::3306                    :::*                   users:(("mysqld",pid=1028,fd=10))
+```
+(9) 设置环境变量   
+```
+]# echo "export PATH=/usr/local/mysql/bin:$PATH" > /etc/profile.d/mysql.sh
+[root@localhost ~]# source /etc/profile.d/mysql.sh
+```  
+(10) 测试登录,默认是没有密码,直接回车就可进入
+```
+]# mysql -uroot -p
+Enter password:
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 1
+Server version: 5.6.30 Source distribution
+
+Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql>
+```   
+(11) 修改MySQL用户root的密码,此时使用安全加固方法   
+```
+]# mysql_secure_installation
+
+
+
+NOTE: RUNNING ALL PARTS OF THIS SCRIPT IS RECOMMENDED FOR ALL MySQL
+      SERVERS IN PRODUCTION USE!  PLEASE READ EACH STEP CAREFULLY!
+
+In order to log into MySQL to secure it, we'll need the current
+password for the root user.  If you've just installed MySQL, and
+you haven't set the root password yet, the password will be blank,
+so you should just press enter here.
+
+Enter current password for root (enter for none):
+OK, successfully used password, moving on...
+
+Setting the root password ensures that nobody can log into the MySQL
+root user without the proper authorisation.
+
+Set root password? [Y/n] y
+New password:
+Re-enter new password:
+Password updated successfully!
+Reloading privilege tables..
+ ... Success!
+
+
+By default, a MySQL installation has an anonymous user, allowing anyone
+to log into MySQL without having to have a user account created for
+them.  This is intended only for testing, and to make the installation
+go a bit smoother.  You should remove them before moving into a
+production environment.
+
+Remove anonymous users? [Y/n] n
+ ... skipping.
+
+Normally, root should only be allowed to connect from 'localhost'.  This
+ensures that someone cannot guess at the root password from the network.
+
+Disallow root login remotely? [Y/n] n
+ ... skipping.
+
+By default, MySQL comes with a database named 'test' that anyone can
+access.  This is also intended only for testing, and should be removed
+before moving into a production environment.
+
+Remove test database and access to it? [Y/n] y
+ - Dropping test database...
+ ... Success!
+ - Removing privileges on test database...
+ ... Success!
+
+Reloading the privilege tables will ensure that all changes made so far
+will take effect immediately.
+
+Reload privilege tables now? [Y/n] y
+ ... Success!
+
+
+
+
+All done!  If you've completed all of the above steps, your MySQL
+installation should now be secure.
+
+Thanks for using MySQL!
+
+
+Cleaning up...
+
+```  
+
+>方法一：mysql -u root -p 
+use mysql 
+update user set password=password(‘123456’) where user=’root’ 
+flush privileges(刷新权限) 
+方法二：/usr/local/mysql/bin/mysql_secure_installation 
+（修改MySQL用户root的密码，同时可禁止root远程连接，移除test数据库和匿名用户。）  
+方法三: /usr/local/mysql/bin/mysqladmin -uroot -p password '你的密码'
+  
+(12) 输出mysql的头文件至系统头文件路径/usr/include(非必须)
+```
+]# ln -s /usr/local/mysql/include/ /usr/include/mysql
+```   
+(13) 输出mysql的库文件给系统库查找路径(非必须)   
+```
+]# echo "/usr/local/mysql/lib/" >/etc/ld.so.conf.d/mysql.conf
+]# ldconfig
+```
+**问题2:启动服务报错**
+```
+]# service mysqld start
+Starting MySQL.... ERROR! The server quit without updating PID file (/data/mysqldb/localhost.localdomain.pid).
+
+]# vim localhost.localdomain.err
+2017-05-07 23:29:40 2496 [ERROR] Can't start server : Bind on unix socket: Permission denied
+2017-05-07 23:29:40 2496 [ERROR] Do you already have another mysqld server running on socket: /usr/local/mysql/mysql.sock ?
+2017-05-07 23:29:40 2496 [ERROR] Aborting  
+
+找到原因: 因为mysql帐号对/usr/local/mysql没有写权限,无法创建socket文件  
+
+解决方法: 
+]# chown -R mysql.mysql /usr/local/mysql
+[root@localhost mysqldb]# service mysqld start
+Starting MySQL... SUCCESS!
+```
+### 四. php安装  
+(1) PHP添加libmcrypt拓展
+```
+[root@localhost ~]# tar xf libmcrypt-2.5.8.tar.bz2
+[root@localhost ~]# cd libmcrypt-2.5.8/
+[root@localhost libmcrypt-2.5.8]# ./configure --prefix=/usr/local/libmcrypt
+[root@localhost ~]# make && make install && cd
+[root@localhost ~]# sed -i '1a/usr/local/libmcrypt/lib' /etc/ld.so.conf
+```   
+(2) 解决依赖  
+```
+[root@localhost ~]# yum -y install php-pear
+[root@localhost ~]# yum -y install libxml2-devel libcurl-devel libjpeg-devel libpng-devel freetype freetype-devel
+```   
+(3) 编译安装php-5.6   
+```
+[root@localhost ~]# tar xf php-5.6.30.tar.bz2 
+[root@localhost ~]# cd php-5.6.30/
+[root@localhost php-5.6.30]# ./configure --prefix=/usr/local/php --with-config-file-path=/usr/local/php --with-mysql=/usr/local/mysql --with-mysqli=/usr/local/mysql/bin/mysql_config --with-iconv-dir --with-freetype-dir --with-jpeg-dir --with-png-dir --with-zlib --with-libxml-dir --enable-xml --disable-rpath --enable-bcmath --enable-shmop --enable-sysvsem --enable-inline-optimization --with-curl --enable-mbregex --enable-fpm --enable-mbstring --with-gd --enable-gd-native-ttf --with-mhash  --enable-pcntl --enable-sockets --with-xmlrpc --enable-zip --enable-soap --with-mcrypt=/usr/local/libmcrypt/ --with-gettext
+[root@localhost php-5.6.30]# make && make install   
+```   
+(4) 复制php配置文件   
+```
+[root@localhost php-5.6.30]# cp php.ini-production /usr/local/php/etc/php.ini
+```   
+(5) 复制php-fpm配置文件  
+```
+[root@localhost php-5.6.30]# cp /usr/local/php/etc/php-fpm.conf.default /usr/local/php/etc/php-fpm.conf
+```   
+(6) 复制php-fpm启动脚本到init.d,设置开机启动
+```
+[root@localhost php-5.6.30]# cp sapi/fpm/init.d.php-fpm /etc/init.d/php-fpm
+[root@localhost php-5.6.30]# cd
+[root@localhost ~]# chmod +x /etc/rc.d/init.d/php-fpm 
+[root@localhost ~]# chkconfig --add php-fpm
+[root@localhost ~]# chkconfig php-fpm on
+```  
+(7) 按照标准，给php-fpm创建一个指定的用户和组   
+```
+[root@localhost php]# useradd -r www
+```    
+(8) 立即启动php-fpm  
+```
+[root@localhost php]# service php-fpm start
+```  
+(9) 修改nginx配置文件使之支持php   
+```
+[root@localhost ~]# vim /etc/nginx/nginx.conf
+修改
+        #location ~ \.php$ {
+        #    root           html;
+        #    fastcgi_pass   127.0.0.1:9000;
+        #    fastcgi_index  index.php;
+        #    fastcgi_param  SCRIPT_FILENAME  /scripts$fastcgi_script_name;
+        #    include        fastcgi_params;
+        #}
+为
+location ~ \.php$ {
+    root           html;
+    fastcgi_pass   127.0.0.1:9000;
+    fastcgi_index  index.php;
+    fastcgi_param  SCRIPT_FILENAME  /usr/local/nginx/html$fastcgi_script_name;
+    include        fastcgi_params;
+}
+
+测试一下是否有错：
+/usr/local/nginx/sbin/nginx -t
+平滑重启nginx
+[root@localhost ~]# systemctl reload nginx
+或 
+[root@localhost ~]# /usr/local/nginx/sbin/nginx -s reload
+```
+
+### 五. 测试php和nginx和mysql   
+(1) 测试nginx和php的联动
+```
+[root@localhost ~]# cat > /usr/local/nginx/html/index.php << EOF
+> <?php
+> phpinfo()
+> ?>
+> EOF
+```   
+![mark](http://ohfysad7j.bkt.clouddn.com/blog/20170509/014035296.png?imageslim)  
+(2) 测试php与mysql的联动   
+```
+[root@localhost ~]# cat > /usr/local/nginx/html/index.php <<EOF
+<?php
+    \$conn = mysql_connect('127.0.0.1','root','123456');
+    if (\$conn)
+       echo "OK";
+    else
+       echo "Failure";
+?>
+EOF
+```  
+![mark](http://ohfysad7j.bkt.clouddn.com/blog/20170509/015136358.png?imageslim)   
+
+**问题3: 测试php和mysql联动是有警告mysql_connect(): Headers and client library minor version mismatch**   
+```
+[root@localhost ~]# /usr/local/php/bin/php -i|grep Client
+Client API version => 5.5.44-MariaDB
+Client API library version => 5.5.44-MariaDB
+Client API header version => 5.6.30
+Soap Client => enabled
+```
+ 
+原因: 版本不兼容导致上述警告, 唉,新版本总会有各种各样的问题!!!  
+new MySQL 5.6 family you need to install PHP with php5-mysqlnd, not php5-mysql   
+解决方法: 重新编译
+```
+./configure --prefix=/usr/local/php --with-config-file-path=/usr/local/php  --with-mysql=mysqlnd --with-mysqli=mysqlnd --with-pdo-mysql=mysqlnd --with-iconv-dir --with-freetype-dir --with-jpeg-dir --with-png-dir --with-zlib --with-libxml-dir --enable-xml --disable-rpath --enable-bcmath --enable-shmop --enable-sysvsem --enable-inline-optimization --with-curl --enable-mbregex --enable-fpm --enable-mbstring --with-gd --enable-gd-native-ttf --with-mhash  --enable-pcntl --enable-sockets --with-xmlrpc --enable-zip --enable-soap --with-mcrypt=/usr/local/libmcrypt/ --with-gettext
+
+用
+--with-mysql=mysqlnd 
+--with-mysqli=mysqlnd 
+--with-pdo-mysql=mysqlnd
+替换掉原来的
+--with-mysql=/usr/local/mysql
+--with-mysqli=/usr/local/mysql/bin/mysql_config 
+```
+
+

@@ -1,0 +1,463 @@
+---
+layout: post
+category: "android"
+title:  "Linux系统启动流程和kickstart制作和脚本练习4"
+tags: [马哥,Linux]
+---  
+  
+## 1、请详细描述CentOS系统的启动流程（详细到每个过程系统做了哪些事情）    
+##### 内核空间的启动流程
+ 一. POST 加电自检  
+1. 在加电之后，智能设备所运行的内部存储的一系列检测程序集合。缩写为ＰＯＳＴ。这些检测程序在软件加载到硬件上运行之前对硬件的基本完整性加以验证。  
+2. 用于实现POST的代码在主板上ROM(CMOS)芯片上。  
+
+二. Boot  Sequence(BIOS)   
+按次序查找各引导设备，第一个有引导程序的设备即为本次启动要用到的设备；  
+
+三. Boot Loader  
+1. 第1阶段  
+* 读取磁盘设备的第一个扇区中的MBR
+* 用来加载第二阶段, 只存放了bootloader的部分代码
+2. 第1.5阶段  
+提供文件系统驱动,让第一阶段的代码能够找到第二阶段
+3. 第2阶段
+找到grub的配置文件（/boot/grub2/grub.cfg），并根据其中的设定给用户提供一个可选择的菜单，用于选择想要启动的系统或内核版本。同时stage2即/boot/目录下还提供了Linux系统内核文件（vmlinuz文件）和虚拟文件系统文件（initramfs）等其它核心文件。
+待用户选择了相应的系统或等待超时后，系统启动进入下一个阶段。
+
+四. 加载内核
+在用户选择了要启动的系统后，这时bootloader程序会将/boot下的内核文件、虚拟文件系统文件加载至内存中解压并运行，至此bootloader的工作已圆满完成。接下来的工作将由Linux内核来完成。  
+内核初始化:
+* 探测可识别到的所有硬件设备；
+* 加载硬件驱动程序；（有可能会借助于ramdisk加载驱动）
+* 以只读方式挂载根文件系统；
+* 运行用户空间的第一个应用程序：/sbin/init  
+自此内核初始化完成, 后续任务交给用户空间程序,只在模式切换或系统发生中断时,内核才会参与
+
+```			  
+init程序的类型：
+
+				CentOS 5-：SysV init
+					配置文件：/etc/inittab 
+					
+				CentOS 6：Upstart
+					配置文件：/etc/inittab
+						/etc/init/*.conf
+						
+				CentOS 7：Systemd
+					配置文件：/usr/lib/systemd/system/, /etc/systemd/system/
+
+```
+##### 用户空间的启动流程 (SysV init)  
+
+一. 设置默认运行级别   
+读取/etc/inittab, 设定系统启动的运行级别  
+```
+					0：关机, shutdown
+					1：单用户模式(single user)，root用户，无须认证；维护模式；
+					2、多用户模式(multi user)，会启动网络功能，但不会启动NFS；维护模式；
+					3、多用户模式(mutli user)，完全功能模式；文本界面；
+					4、预留级别：目前无特别使用目的，但习惯以同3级别功能使用；
+					5、多用户模式(multi user)， 完全功能模式，图形界面；
+					6、重启，reboot
+```
+
+二. 运行系统初始化脚本，完成系统初始化    
+```  
+					系统初始化脚本：/etc/rc.d/rc.sysinit
+						(1) 设置主机名；
+						(2) 设置欢迎信息；
+						(3) 激活udev和selinux；
+						(4) 挂载/etc/fstab文件中定义的所有文件系统； 
+						(5) 检测根文件系统，并以读写方式重新挂载根文件系统； 
+						(6) 设置系统时钟； 
+						(7) 根据/etc/sysctl.conf文件来设置内核参数；
+						(8) 激活lvm及软raid设备；
+						(9) 激活swap设备；
+						(10) 加载额外设备的驱动程序；
+						(11) 清理操作； 
+
+```  
+
+三. 关闭对应级别下需要停止的服务，启动对应级别下需要开启的服务    
+根据运行级别的不同，系统会运行rc0.d到rc6.d中的响应的脚本程序，来完成相应的初始化工作和启动相应的服务。
+执行/etc/rc.d/rc.local  
+
+四. 启动终端
+
+## 2、为运行于虚拟机上的CentOS 6添加一块新硬件，提供两个主分区；
+  (1) 为硬盘新建两个主分区；并为其安装grub；  
+  (2) 为硬盘的第一个主分区提供内核和ramdisk文件； 为第二个分区提供rootfs；
+  (3) 为rootfs提供bash、ls、cat程序及所依赖的库文件；
+  (4) 为grub提供配置文件；
+  (5) 将新的硬盘设置为第一启动项并能够正常启动目标主机；  
+  
+```  
+分区:
+  [root@han ~]# cat /proc/partitions
+major minor  #blocks  name
+
+   8        0   41943040 sda
+   8        1     204800 sda1
+   8        2   30720000 sda2
+   8        3     204800 sda3
+   8       16   20971520 sdb
+   8       17    1060258 sdb1
+   8       18    1060290 sdb2    
+[root@han ~]# mke2fs -t ext4 /dev/sdb1
+[root@han ~]# mke2fs -t ext4 /dev/sdb2
+准备boot目录:
+[root@han ~]# mkdir /mnt/boot
+[root@han ~]# mount /dev/sdb1 /mnt/boot
+[root@han ~]# ls /mnt/boot
+lost+found
+
+安装grub: 
+[root@han ~]# grub-install --root-directory=/mnt /dev/sdb
+Probing devices to guess BIOS drives. This may take a long time.
+Installation finished. No error reported.
+This is the contents of the device map /mnt/boot/grub/device.map.
+Check if this is correct or not. If any of the lines is incorrect,
+fix it and re-run the script `grub-install'.
+
+(fd0)   /dev/fd0
+(hd0)   /dev/sda
+(hd1)   /dev/sdb
+[root@han ~]# ls /mnt/boot
+grub  lost+found
+
+复制内核文件和initramfs:
+[root@han ~]# cp /boot/vmlinuz-2.6.32-642.el6.x86_64 /mnt/boot/vmlinuz
+[root@han ~]# cp /boot/initramfs-2.6.32-642.el6.x86_64.img /mnt/boot/initramfs.img
+
+添加grub配置文件
+[root@han ~]# vim /mnt/boot/grub/grub.conf
+default=0
+timeout=5
+title CentOS-HAN
+        root(hd0,0)
+        kernel /vmlinuz ro root=/dev/sdb2
+        initrd /initramfs.img
+
+此处: root配置rootfs根分区
+
+准备根目录结构和程序:
+[root@han ~]# mkdir /mnt/sysroot
+[root@han ~]# mount /dev/sdb2 /mnt/sysroot
+[root@han ~]# cd /mnt/sysroot
+[root@han sysroot]# mkdir -pv etc bin sbin lib lib64 dev proc sys tmp var usr home root mnt media
+mkdir: created directory `etc'
+mkdir: created directory `bin'
+mkdir: created directory `sbin'
+mkdir: created directory `lib'
+mkdir: created directory `lib64'
+mkdir: created directory `dev'
+mkdir: created directory `proc'
+mkdir: created directory `sys'
+mkdir: created directory `tmp'
+mkdir: created directory `var'
+mkdir: created directory `usr'
+mkdir: created directory `home'
+mkdir: created directory `root'
+mkdir: created directory `mnt'
+mkdir: created directory `media'
+[root@han sysroot]# cp /bin/bash /mnt/sysroot/bin/
+[root@han sysroot]# ldd /bin/bash
+        linux-vdso.so.1 =>  (0x00007ffdb9371000)
+        libtinfo.so.5 => /lib64/libtinfo.so.5 (0x0000003787200000)
+        libdl.so.2 => /lib64/libdl.so.2 (0x000000377f600000)
+        libc.so.6 => /lib64/libc.so.6 (0x000000377fa00000)
+        /lib64/ld-linux-x86-64.so.2 (0x000000377f200000)
+[root@han sysroot]# cp /lib64/libtinfo.so.5 /mnt/sysroot/lib64/
+[root@han sysroot]# cp /lib64/libdl.so.2 /mnt/sysroot/lib64/
+[root@han sysroot]# cp /lib64/libc.so.6 /mnt/sysroot/lib64/
+[root@han sysroot]# cp /lib64/ld-linux-x86-64.so.2 /mnt/sysroot/lib64/
+以下使用脚本复制命令和库文件
+[root@han ~]# chmod +x cmdcp.sh
+[root@han ~]# ./cmdcp.sh
+please input other command: ls
+please input other command: cat
+please input other command: quit
+检查
+[root@han ~]# ls /mnt/sysroot/bin
+bash  cat  ls
+[root@han ~]# ls /mnt/sysroot/lib64
+ld-linux-x86-64.so.2  libcap.so.2  libpthread.so.0  libtinfo.so.5
+libacl.so.1           libc.so.6    librt.so.1
+libattr.so.1          libdl.so.2   libselinux.so.1
+测试命令:
+[root@han sysroot]# chroot /mnt/sysroot
+bash-4.1# ls
+bin  etc   lib    lost+found  mnt   root  sys  usr
+dev  home  lib64  media       proc  sbin  tmp  var
+bash-4.1# exit
+exit
+[root@han sysroot]# sync
+[root@han sysroot]# sync
+[root@han sysroot]# sync
+
+修改init程序,指定init程序(bash)
+default=0
+timeout=5
+title CentOS-HAN
+        root(hd0,0)
+        kernel /vmlinuz ro root=/dev/sda2 selinux=0 init=/bin/bash
+        initrd /initramfs.img
+
+[root@han sysroot]# sync
+
+```   
+
+挂载新的硬盘,并启动: 
+(1)  找到挂载的硬盘  
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/77049032-file_1490460024010_100de.png)
+
+(2) 新建虚拟机，挂载刚才的硬盘  
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/11242703-file_1490460024147_17c2.png)
+  
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/22493898-file_1490460024259_9a84.png)
+  
+ (3) 启动虚拟机 
+ 先关闭原虚拟机,否则提示文件被锁定  
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/59199724-file_1490460024379_cc43.png)
+      
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/83223193-file_1490460024491_8248.png)
+
+模拟运行成功.
+ 
+## 3、制作一个kickstart文件以及一个引导镜像。描述其过程。  
+
+一. 准备系统iso镜像目录(centos7.2)
+```
+[root@lab3 ~]# mkdir /mnt/cdrom
+[root@lab3 ~]# mount /dev/sr0 /mnt/cdrom
+mount: /dev/sr0 is write-protected, mounting read-only
+[root@lab3 ~]# mkdir /mnt/iso
+[root@lab3 ~]# cd /mnt/cdrom
+[root@lab3 cdrom]# cp -frav * /mnt/iso
+[root@lab3 cdrom]# cp .discinfo /mnt/iso
+```
+二. 定制kickstart:   
+```
+[root@node1 ~]# yum -y install system-config-kickstart
+``` 
+定制kickstart文件    
+```  
+[root@node1 ~]# system-config-kickstart
+
+```  
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/82127129-file_1490460024611_14ee0.png)
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/68548718-file_1490460024746_f6b2.png)
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/3208296-file_1490460024872_6a2f.png)
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/36975435-file_1490460025008_da1a.png)
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/56406815-file_1490460025134_553.png)
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/44212483-file_1490460047575_6860.png)
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/39025512-file_1490460047056_ef14.png)
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/56765090-file_1490460047189_13f9f.png)
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/20638426-file_1490460047316_96e1.png)
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/93030699-file_1490460047444_7de.png)
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/51790941-file_1490460046421_a609.png)
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/37332717-file_1490460046547_14417.png)
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/68115272-file_1490460046671_a2ab.png)  
+
+```
+[root@lab3 ~]# ksvalidator ks.cfg  
+```
+
+三. 整合镜像文件和ks文件,并修改相关配置  
+    
+```
+[root@lab3 ~]# cd /mnt/iso   
+[root@lab3 iso]# vim isolinux/isolinux.cfg  
+```
+定制启动标签 ,指定ks位置  
+
+```
+label custom
+  menu label ^Install CentOS 7 By han
+  menu default
+  kernel vmlinuz
+  append initrd=initrd.img inst.ks=cdrom:/isolinux/ks.cfg inst.stage2=hd:LABEL=CENTOS7 quiet
+```
+
+其中，需要把其它启动项中的menu default去掉，加在上面的自定义启动项中，这样当你从光盘启动时，才会默认选择该项，并且有倒计时，由于默认的光盘倒计时时间太久了，为600秒，我们把timeout 600改成timeout 100，这样默认就是10秒倒计时了。
+    
+ 拷贝ks文件到光盘根目录
+```
+[root@lab3 iso]# cp /root/ks.cfg isolinux/
+[root@lab3 iso]# ls isolinux/
+boot.cat  grub.conf   isolinux.bin  ks.cfg   splash.png  upgrade.img   vmlinuz
+boot.msg  initrd.img  isolinux.cfg  memtest  TRANS.TBL   vesamenu.c32
+```
+
+四. 重新打包ISO
+```  
+[root@lab3 centos7]# genisoimage -R -J -T -v -cache-inodes -joliet-long  -V CENTOS7 -o /root/CentOS-7.2-x86_64-By-han.iso    -c isolinux/boot.cat    -b isolinux/isolinux.bin      -no-emul-boot -boot-load-size 4 -boot-info-table    -eltorito-alt-boot     -b images/efiboot.img       -no-emul-boot .
+```  
+五. 加载新生成的镜像,并启动
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/35696096-file_1490460046804_1130e.png)
+![](http://ohfysad7j.bkt.clouddn.com/17-3-26/7389128-file_1490460046935_13f68.png)
+  
+ 启动成功,至此centos7的自动化安装光盘制作完成
+ 补充: 经测试分区格式为xfs也是可以的  
+```
+ [root@localhost ~]# df -Th
+Filesystem     Type      Size  Used Avail Use% Mounted on
+/dev/sda3      xfs        92G  847M   91G   1% /
+devtmpfs       devtmpfs  480M     0  480M   0% /dev
+tmpfs          tmpfs     489M     0  489M   0% /dev/shm
+tmpfs          tmpfs     489M  6.7M  483M   2% /run
+tmpfs          tmpfs     489M     0  489M   0% /sys/fs/cgroup
+/dev/sda1      xfs       997M  126M  872M  13% /boot
+tmpfs          tmpfs      98M     0   98M   0% /run/user/0
+```
+ 
+## 4、写一个脚本
+  (1) 能接受四个参数：start, stop, restart, status
+   start: 输出“starting 脚本名 finished.”
+   ...  
+  (2) 其它任意参数，均报错退出；  
+```  
+
+#!/bin/bash
+# description : testservice
+
+case $1 in
+start)
+        echo "start $0 finished."
+        ;;
+stop)
+        echo "stop $0 finished."
+        ;;
+restart)
+        echo "restart $0 restarted."
+        ;;
+status)
+        echo "$0 status."
+        ;;
+*)
+        echo "参数错误"
+        exit 1
+esac
+
+```  
+
+## 5、写一个脚本，判断给定的用户是否登录了当前系统；  
+(1) 如果登录了，则显示用户登录，脚本终止；  
+(2) 每3秒钟，查看一次用户是否登录；   
+```
+#!/bin/bash
+#description: 判断给定用户是否登录了系统
+#author: han
+
+while true;do
+        if who | grep $1 &> /dev/null;then
+                echo "$1 is logging."
+                exit 0
+        fi
+        sleep 3
+done
+
+```
+## 6、写一个脚本，显示用户选定要查看的信息；  
+cpu) display cpu info  
+mem) display memory info    
+disk) display disk info  
+quit) quit  
+非此四项选择，则提示错误，并要求用户重新选择，只到其给出正确的选择为止；      
+    
+```   
+#!/bin/bash
+#descripton:查看系统信息
+#author: han
+
+cat <<EOF
+cpu) display cpu info
+mem) display memory info
+disk) display disk info
+quit) quit
+EOF
+echo
+read -p "please input your choice: " choice
+
+while true;do
+        case $choice in
+        cpu)
+                lscpu
+                exit 0
+                ;;
+        mem)
+                free -m
+                exit 0
+                ;;
+        disk)
+                fdisk -l
+                exit 0
+                ;;
+        quit)
+                exit 1
+                ;;
+        *)
+                echo "argument error, please input your choice"
+                read -p "please input your choice: " choice
+                ;;
+        esac
+
+done
+测试: 
+[root@lab3 scripts]# bash info.sh
+cpu) display cpu info
+mem) display memory info
+disk) display disk info
+quit) quit
+
+please input your choice: ddd
+argument error, please input your choice
+please input your choice: mem
+              total        used        free      shared  buff/cache   available
+Mem:            977         168          67          11         742         625
+Swap:           999           2         997
+
+```  
+
+## 7、写一个脚本
+(1) 用函数实现返回一个用户的UID和SHELL；用户名通过参数传递而来；  
+(2) 提示用户输入一个用户名或输入“quit”退出；  
+当输入的是用户名，则调用函数显示用户信息；
+当用户输入quit，则退出脚本；  
+进一步地：显示键入的用户相关信息后，再次提醒输出用户名或quit: 
+
+```
+#!/bin/bash
+#description: 持续显示用户信息
+
+userinfo() {
+        if id "$username" &> /dev/null; then
+                grep "^$username\>" /etc/passwd | cut -d: -f3,7
+        else
+                echo "No such user."
+        fi
+}
+
+
+read -p "please input one username or quit: " username
+
+while true;do
+        if [ $username == "quit" ];then
+                exit
+        else
+                userinfo
+                read -p "please input one username or quit: " username
+        fi
+done
+
+测试： 
+[root@node1 scripts]# bash user.sh
+please input one username or quit: root
+0:/bin/bash
+please input one username or quit: nginx
+987:/bin/bash
+please input one username or quit: ddd
+No such user.
+please input one username or quit: quit
+
+```

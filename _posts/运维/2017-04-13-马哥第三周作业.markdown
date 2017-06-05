@@ -1,0 +1,195 @@
+---
+layout: post
+category: "android"
+title:  "linux用户管理命令练习"
+tags: [马哥,Linux]
+---  
+  
+## 1、列出当前系统上所有已经登录的用户的用户名，注意：同一个用户登录多次，则只显示一次即可。  
+```  
+[root@node1 ~]# who | cut -d" " -f1 | uniq
+(unknown)
+root  
+```
+## 2、取出最后登录到当前系统的用户的相关信息。  
+```  
+[root@node1 ~]# who | tail -1
+root     pts/0        2016-12-17 20:55 (172.16.0.1)
+```  
+
+## 3、取出当前系统上被用户当作其默认shell的最多的那个shell。  
+方法1：   
+```  
+[root@node1 ~]# cut -d: -f7 /etc/passwd | uniq -c | sort -nr  | head -1 | cut -d" " -f7
+/sbin/nologin
+```  
+方法2：   
+```  
+[root@node1 ~]# cut -d: -f7 /etc/passwd | uniq -c | sort -nr | head -1 | awk -F " " '{print $2}'
+/sbin/nologin
+```  
+
+## 4、将/etc/passwd中的第三个字段数值最大的后10个用户的信息全部改为大写后保存至/tmp/maxusers.txt文件中。  
+```  
+[root@node1 ~]# sort -t: -k3 -n /etc/passwd | tail -10 | tr 'a-z' 'A-Z' > /tmp/maxusers.txt
+[root@node1 ~]# cat /tmp/maxusers.txt
+ZHANSAN:X:1001:1001::/HOME/ZHANSAN:/BIN/BASH
+TOM:X:1002:1002::/HOME/TOM:/BIN/BASH
+DFDFDF:X:1003:1003::/HOME/DFDFDF:/BIN/BASH
+CONGCONG:X:1004:1004::/HOME/CONGCONG:/BIN/BASH
+CENTOS:X:1005:1005::/HOME/CENTOS:/BIN/BASH
+GENTOO:X:1006:1006::/HOME/GENTOO:/BIN/BASH
+USER1:X:1007:1007::/HOME/USER1:/BIN/BASH
+USER2:X:1008:1008::/HOME/USER2:/BIN/BASH
+USER3:X:1009:1009::/HOME/USER3:/BIN/BASH
+NFSNOBODY:X:65534:65534:ANONYMOUS NFS USER:/VAR/LIB/NFS:/SBIN/NOLOGIN
+```  
+
+## 5、取出当前主机的IP地址，提示：对ifconfig命令的结果进行切分。  
+方法1：   
+```  
+[root@node1 ~]# ifconfig eno16777736 | grep -o "inet .*" | cut -d" " -f2
+172.16.0.142
+```  
+方法2： 
+```  
+[root@node1 ~]# ifconfig eno16777736 | grep  "inet " | awk -F" " '{print $2}'
+172.16.0.142
+```  
+
+## 6、列出/etc目录下所有以.conf结尾的文件的文件名，并将其名字转换为大写后保存至/tmp/etc.conf文件中。  
+```  
+[root@node1 ~]# ls /etc/*.conf | tr 'a-z' 'A-Z' > /tmp/etc.conf
+[root@node1 ~]# cat /tmp/etc.conf
+/ETC/ASOUND.CONF
+/ETC/BRLTTY.CONF
+/ETC/CHRONY.CONF
+/ETC/DLEYNA-SERVER-SERVICE.CONF
+/ETC/DNSMASQ.CONF
+/ETC/DRACUT.CONF
+/ETC/E2FSCK.CONF
+/ETC/FPRINTD.CONF
+/ETC/FUSE.CONF
+.........
+```  
+
+## 7、显示/var目录下一级子目录或文件的总个数。  
+```  
+[root@node1 ~]# ls /var | wc -l
+24
+```  
+
+## 8、取出/etc/group文件中第三个字段数值最小的10个组的名字。  
+```  
+[root@node1 ~]# sort -t: -k3 -n  /etc/group | head -10 | cut -d: -f1
+root
+bin
+daemon
+sys
+adm
+tty
+disk
+lp
+mem
+kmem  
+```
+
+## 9、将/etc/fstab和/etc/issue文件的内容合并为同一个内容后保存至/tmp/etc.test文件中。  
+```  
+[root@node1 ~]# cat /etc/fstab /etc/issue > /tmp/etc.test
+[root@node1 ~]# cat /tmp/etc.test
+
+#
+# /etc/fstab
+# Created by anaconda on Mon Nov 14 08:53:07 2016
+#
+# Accessible filesystems, by reference, are maintained under '/dev/disk'
+# See man pages fstab(5), findfs(8), mount(8) and/or blkid(8) for more info
+#
+UUID=5da6c6f2-371c-4895-9b28-b569cde137bb /                       xfs     defaults        0 0
+UUID=d24afb31-d88c-48ad-aba0-d3ef6a5b0480 /boot                   xfs     defaults        0 0
+UUID=4a304ef0-a2cc-46f7-a262-10a22ee95ae1 swap                    swap    defaults        0 0
+\S
+Kernel \r on an \m  
+```
+
+## 10、请总结描述用户和组管理类命令的使用方法并完成以下练习：  
+   (1)、创建组distro，其GID为2016；  
+```  
+[root@node1 ~]# groupadd -g 2016 distro
+```
+   (2)、创建用户mandriva, 其ID号为1005；基本组为distro；  
+```  
+[root@node1 ~]# useradd -u 1005 -g distro mandriva  
+```  
+
+   (3)、创建用户mageia，其ID号为1100，家目录为/home/linux;  
+```  
+[root@node1 ~]# useradd -u 1100 -d /home/linux mageia  
+```  
+
+   (4)、给用户mageia添加密码，密码为mageedu；  
+```  
+[root@node1 ~]# echo "mageedu" | passwd --stdin mageia
+更改用户 mageia 的密码 。
+passwd：所有的身份验证令牌已经成功更新。
+```  
+
+   (5)、删除mandriva，但保留其家目录；  
+```  
+[root@node1 ~]# userdel mandriva  
+```  
+
+   (6)、创建用户slackware，其ID号为2002，基本组为distro，附加组peguin；  
+```  
+[root@node1 ~]# useradd -u 2002 -g distro -G peguin slackware
+[root@node1 ~]# id slackware
+uid=2002(slackware) gid=2016(distro) 组=2016(distro),2017(peguin)
+```  
+
+   (7)、修改slackware的默认shell为/bin/tcsh；  
+```  
+[root@node1 ~]# usermod -s /bin/tcsh slackware
+[root@node1 ~]# cat /etc/passwd | grep slackware
+slackware:x:2002:2016::/home/slackware:/bin/tcsh  
+```  
+
+   (8)、为用户slackware新增附加组admins；  
+```  
+[root@node1 ~]# usermod -a -G admins slackware
+[root@node1 ~]# id slackware
+uid=2002(slackware) gid=2016(distro) 组=2016(distro),2017(peguin),2018(admins)
+```  
+
+   (9)、为slackware添加密码，且要求密码最短使用期限为3天，最长为180天，警告为3天；  
+```  
+[root@node1 ~]# passwd slackware
+更改用户 slackware 的密码 。
+新的 密码：
+无效的密码： 密码少于 8 个字符
+重新输入新的 密码：
+passwd：所有的身份验证令牌已经成功更新。  
+  
+[root@node1 ~]# passwd -n 3 -x 180 -w 3 slackware
+[root@node1 ~]# cat /etc/shadow | grep slackware
+slackware:$6$Agrpw.Oz$ckOIkhNZXwjoglVj4YKm4pSjmRxLUG74KaVVin8yASrvYFNDW0D58fjIoKxswi98MVc6.A3S3E6WXDTU6zXxF0:17152:3:180:3:::
+
+```
+   (10)、添加用户openstack，其ID号为3003, 基本组为clouds，附加组为peguin和nova；  
+```   
+[root@node1 ~]# useradd -u 3003 -g clouds -G peguin,nova openstack
+[root@node1 ~]# id openstack
+uid=3003(openstack) gid=2019(clouds) 组=2019(clouds),2017(peguin),2020(nova)
+```  
+
+   (11)、添加系统用户mysql，要求其shell为/sbin/nologin；  
+```  
+[root@node1 ~]# useradd -r -s /sbin/nologin mysql  
+```  
+
+   (12)、使用echo命令，非交互式为openstack添加密码。  
+```  
+[root@node1 ~]# echo "openstack" | passwd --stdin openstack
+更改用户 openstack 的密码 。
+passwd：所有的身份验证令牌已经成功更新。  
+```

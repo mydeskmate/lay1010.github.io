@@ -1,0 +1,258 @@
+---
+layout: post
+category: "android"
+title:  "shell脚本练习3"
+tags: [马哥,Linux]
+---
+  
+### 1、写一个脚本，判断当前系统上所有用户的shell是否为可登录shell（即用户的shell不是/sbin/nologin）；分别这两类用户的个数；通过字符串比较来实现；  
+```
+#!/bin/bash
+# 统计登录用户和非登陆用户的个数
+# author: han
+
+declare -i loginnum=0
+declare -i nologinnum=0
+
+while read line;do
+        if [[ "${line}" =~ "/sbin/nologin" ]];then
+                let nologinnum++
+        else
+                let loginnum++
+        fi
+done < /etc/passwd
+
+echo "可登录shell用户数: $loginnum"
+echo "非登陆sheel用户数: $nologinnum"
+
+执行结果: 
+[root@localhost scripts]# bash loginshell.sh
+可登录shell用户数: 8
+非登陆sheel用户数: 19
+
+验证: 
+[root@localhost scripts]# grep "/sbin/nologin$" /etc/passwd | wc -l
+19
+[root@localhost scripts]# grep -v "/sbin/nologin$" /etc/passwd | wc -l
+8
+```
+### 2、写一个脚本
+(1) 获取当前主机的主机名，保存于hostname变量中；
+(2) 判断此变量的值是否为localhost，如果是，则将当前主机名修改为www.magedu.com；
+(3) 否则，则显示当前主机名；  
+```
+#!/bin/bash
+#description: 显示当前主机名
+
+hostname=$(hostname)
+# 因为默认主机名是"localhost.localdomain",所以做了模式匹配
+if [[ "$hostname" =~ "localhost" ]];then
+        hostnamectl set-hostname www.magedu.com && echo "主机名已修改"
+else
+        hostname && echo 主机名未修改""
+fi
+
+
+执行结果: 
+[root@localhost scripts]# bash hostname.sh 
+主机名已修改
+[root@localhost scripts]# hostname
+www.magedu.com
+[root@www scripts]# bash hostname.sh 
+www.magedu.com
+主机名未修改
+```
+### 3、写一个脚本，完成如下功能
+(1) 传递一个磁盘设备文件路径给脚本，判断此设备是否存在；
+(2) 如果存在，则显示此设备上的所有分区信息；  
+```
+#!/bin/bash
+#description: 显示磁盘所有分区信息
+#author: han
+
+if [ $# -lt 1 ];then
+        echo "请输入一个磁盘路径"
+        exit 1
+fi
+
+if [ -b $1 ];then
+        fdisk -l $1
+else
+        echo "文件不存在或不是磁盘文件"
+fi
+
+执行结果: 
+[root@www scripts]# bash disk.sh /dev/sda
+
+磁盘 /dev/sda：107.4 GB, 107374182400 字节，209715200 个扇区
+Units = 扇区 of 1 * 512 = 512 bytes
+扇区大小(逻辑/物理)：512 字节 / 512 字节
+I/O 大小(最小/最佳)：512 字节 / 512 字节
+磁盘标签类型：dos
+磁盘标识符：0x000a61b9
+
+   设备 Boot      Start         End      Blocks   Id  System
+/dev/sda1   *        2048     1050623      524288   83  Linux
+/dev/sda2         1050624   105908223    52428800   83  Linux
+/dev/sda3       105908224   126879743    10485760   83  Linux
+/dev/sda4       126879744   209715199    41417728    5  Extended
+/dev/sda5       126881792   128929791     1024000   82  Linux swap / Solaris
+/dev/sda6       128931840   149903359    10485760   83  Linux
+
+[root@www scripts]# bash disk.sh /dddd
+文件不存在或不是磁盘文件
+[root@www scripts]# bash disk.sh /etc
+文件不存在或不是磁盘文件
+```
+### 4、写一个脚本，完成如下功能
+   脚本能够接受一个参数；
+   (1) 如果参数1为quit，则显示退出脚本，并执行正常退出；
+   (2) 如果参数1为yes，则显示继续执行脚本；
+   (3) 否则，参数1为其它任意值，均执行非正常退出；  
+```
+#!/bin/bash
+#description:判断接收的参数,决定下面的行为
+#author: han
+
+if [ $# -lt 1 ];then
+        echo "请输入一个参数"
+        exit 1
+fi
+
+case $1 in
+quit)
+        echo "退出脚本"
+        exit 0
+        ;;
+yes)
+        echo "继续执行脚本"
+        ;;
+*)
+        exit 2
+        ;;
+esac
+
+执行结果:
+[root@www scripts]# bash ajust.sh quit
+退出脚本
+[root@www scripts]# bash ajust.sh yes
+继续执行脚本
+[root@www scripts]# bash ajust.sh ok
+[root@www scripts]# 
+```
+### 5、写一个脚本，完成如下功能
+   传递一个参数给脚本，此参数为gzip、bzip2或者xz三者之一；
+   (1) 如果参数1的值为gzip，则使用tar和gzip归档压缩/etc目录至/backups目录中，并命名为/backups/etc-20160613.tar.gz；
+   (2) 如果参数1的值为bzip2，则使用tar和bzip2归档压缩/etc目录至/backups目录中，并命名为/backups/etc-20160613.tar.bz2；
+   (3) 如果参数1的值为xz，则使用tar和xz归档压缩/etc目录至/backups目录中，并命名为/backups/etc-20160613.tar.xz；
+   (4) 其它任意值，则显示错误压缩工具，并执行非正常退出；  
+```
+#!/bin/bash
+#description: 根据参数选择合适的工具进行归档压缩
+#han
+[ $# -lt 1 ] && echo "请输入一种压缩工具" && exit 1
+
+if [ ! -d /backups ];then
+        mkdir /backups
+fi
+
+case $1  in
+gzip)
+        tar zcf /backups/etc-`date +%Y%m%d`.tar.gz /etc
+        ;;
+bzip2)
+        tar jcf /backups/etc-`date +%Y%m%d`.tar.bz2 /etc
+        ;;
+xz)
+        tar Jcf /backups/etc-`date +%Y%m%d`.tar.xz /etc
+        ;;
+*)
+        echo "错误压缩工具"
+        exit 2
+esac
+
+执行结果:
+[root@www scripts]# bash compress.sh 
+请输入一种压缩工具
+[root@www scripts]# bash compress.sh ddd
+错误压缩工具
+[root@www scripts]# bash compress.sh gzip
+tar: 从成员名中删除开头的“/”
+[root@www scripts]# bash compress.sh bzip2
+tar: 从成员名中删除开头的“/”
+[root@www scripts]# bash compress.sh xz
+tar: 从成员名中删除开头的“/”
+[root@www scripts]# ls /backups/
+etc-20170220.tar.bz2  etc-20170220.tar.gz  etc-20170220.tar.xz  
+```
+### 6、写一个脚本，接受一个路径参数：
+   (1) 如果为普通文件，则说明其可被正常访问；
+   (2) 如果是目录文件，则说明可对其使用cd命令；
+   (3) 如果为符号链接文件，则说明是个访问路径；
+   (4) 其它为无法判断；  
+```
+#!/bin/bash
+#description: 判断文件类型
+#author: han
+
+[ $# -lt 1 ] && echo "请输入一个路径参数" && exit 1
+
+#注意对符号链接的判断需放在普通文件前面,否则会被识别为普通文件
+if [ -h $1 ];then
+        echo "$1是个访问路径"
+elif [ -f $1 ];then
+        echo "$1可被正常访问"
+elif [ -d $1 ];then
+        echo "$1可以使用cd命令"
+else
+        echo "无法判断"
+fi
+
+执行结果:
+[root@www scripts]# bash filetype.sh 
+请输入一个路径参数
+[root@www scripts]# bash filetype.sh /etc/inittab 
+/etc/inittab可被正常访问
+[root@www scripts]# bash filetype.sh /etc/
+/etc/可以使用cd命令
+[root@www scripts]# bash filetype.sh /etc/sysconfig/selinux 
+/etc/sysconfig/selinux是个访问路径
+[root@www scripts]# bash filetype.sh /dev/sda
+无法判断
+
+```
+### 7、写一个脚本，取得当前主机的主机名，判断
+   (1) 如果主机名为空或为localhost，或为"(none)"，则将其命名为mail.magedu.com；
+   (2) 否则，显示现有的主机名即可；  
+```
+#!/bin/bash
+#descriptions: 判断主机名
+#author: han
+
+hostname=`hostname`
+
+if [[ -z "$hostname" ]] || [[ "$hostname" =~ "localhost" ]] || [[ "$hostname" == "(none)" ]];then
+        hostnamectl set-hostname mail.magedu.com && echo "主机名已修改"
+else
+        hostname && echo "主机名未修改"
+fi
+
+执行结果:
+[root@www scripts]# hostname
+mail.magedu.com
+[root@www scripts]# bash hostname2.sh 
+mail.magedu.com
+主机名未修改
+[root@www scripts]# hostname localhost.localdomain
+[root@www scripts]# bash hostname2.sh 
+主机名已修改
+[root@www scripts]# hostname
+mail.magedu.com  
+
+注意: 
+1. centos7 配置该"(none)"时报错, 因为小括号为非法字符
+[root@www scripts]# hostname "(none)"
+hostname: the specified hostname is invalid
+2. 在centos6上运行成功,hostnamectl改为hostname命令即可  
+3. 表达式两边需加空格,在这儿浪费了很长时间
+```

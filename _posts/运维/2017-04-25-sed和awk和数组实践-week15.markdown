@@ -1,0 +1,1033 @@
+---
+layout: post
+category: "android"
+title:  "sed和awk和数组实践"
+tags: [马哥,Linux,sed,awk]
+---  
+
+
+温故知新
+### 1、总结sed和awk的详细用法；  
+(1) sed  
+sed：Stream EDitor，流编辑器，行编辑器  
+
+**基本原理：**  
+一次从文本中读取一行，放到sed自己的工作车间加工, 该工作车间叫做模式空间(pattern space)
+判断该行是否符合过滤模式,
+- 如果符合过滤模式:
+ 1. 送往标准输出(终端)
+ 2. 执行编辑操作, 从模式空间中处理以后,处理过后送到标准输出(不一定有输出,比如删除操作)
+- 如果不能被模式过滤,不做任何操作,直接送到标准输出
+  
+也可以理解为模式空间的的内容,不管匹配不匹配都会送到标准输出,但删除(d)操作例外
+
+**基本语法：** 
+	sed [OPTION]...  'script'  [input-file] …
+```  
+	script：
+		地址定界编辑命令
+
+  	常用选项：
+		-n：不输出模式空间中的内容至屏幕；默认是输出的
+		-e script, --expression=script：多点编辑；同时执行多个编辑命令
+		-f  /PATH/TO/SED_SCRIPT_FILE :  sed脚本,每行一个编辑命令；
+		-r, --regexp-extended：支持使用扩展正则表达式；
+		-i[SUFFIX], --in-place[=SUFFIX]：直接编辑原文件 ；危险:修改前先备份  
+		
+	地址定界：
+	(1) 空地址：对全文进行处理；
+	(2) 单地址：
+		#：指定行；
+		/pattern/：被此模式所匹配到的每一行；
+	(3) 地址范围
+		#,#：             从第#行到第#行
+		#,+#：            从第#行开始，一直到向下的#行
+		#，/pat1/         从指定行开始到第一次被patteren匹配的行结束
+		/pat1/,/pat2/     从第一次pattern匹配的行,到第一次被pattern匹配的行
+		$：最后一行
+	(4) 步进：~
+		1~2：所有奇数行
+		2~2：所有偶数行  
+		
+	编辑命令：
+    	d：删除模式空间中的内容
+    	p：显示模式空间中的内容；
+    	a  \text：在行后面追加文本“text”，支持使用\n实现多行追加； 
+    	i  \text：在行前面插入文本“text”，支持使用\n实现多行插入； 
+    	c  \text：把匹配到的行替换为此处指定的文本“text”；
+    	w /PATH/TO/SOMEFILE：保存模式空间匹配到的行至指定的文件中；
+    	r  /PATH/FROM/SOMEFILE：读取指定文件的内容至当前文件被模式匹配到的行后面；文件合并；
+    	=：为模式匹配到的行打印行号；
+    	!：条件取反；
+    		地址定界!编辑命令；
+    	s///：查找替换，其分隔符可自行指定，常用的有s@@@, s###等；
+    		替换标记：
+    			g：全局替换；
+    			w /PATH/TO/SOMEFILE：将替换成功的结果保存至指定文件中；
+    			p：显示替换成功的行；
+    高级编辑命令：  
+            保持空间 hold space
+    	h：把模式空间中的内容覆盖至保持空间中；
+    	H：把模式空间中的内容追加至保持空间中；
+    	g：把保持空间中的内容覆盖至模式空间中；
+    	G：把保持空间中的内容追加至模式空间中；
+    	x：把模式空间中的内容与保持空间中的内容互换；
+    	n：覆盖读取匹配到的行的下一行至模式空间中；  覆盖原行
+    	N：追加读取匹配到的行的下一行至模式空间中； 追加原行
+    	d：删除模式空间中的行；
+    	D：删除多行模式空间中的所有行；
+
+```
+  
+(2) awk   
+awk：报告生成器，格式化文本输出
+  
+gawk - pattern scanning and processing language
+    模式扫描及编程语言
+
+**基本用法**
+gawk [options] 'program' FILE ...
+　　program: PATTERN{ACTION STATEMENTS}    
+　　模式{动作语句}; 
+　　语句之间用分号分隔
+```
+PATTERN:  主要用来定界
+    awk本身实现文件遍历一次读取一行文本，按输入分隔符切片，每一片放在内置变量中（$1,$2...），整行用$0表示，支持条件判断，循环（字段间循环）  
+
+print, printf
+选项：
+-F：指明输入时用到的字段分隔符；默认空白字符
+-v var=value: 自定义变量；
+  
+1、print
+
+	print item1, item2, ...
+
+	要点：
+		(1) 逗号分隔符；
+		(2) 输出的各item可以字符串，也可以是数值；当前记录的字段、变量或awk的表达式；
+		(3) 如省略item，相当于print $0; 
+示例： 
+[root@localhost ~]# tail -3 /etc/fstab | awk '{print $2,$3}'
+/ xfs
+/boot xfs
+swap swap
+
+[root@localhost ~]# tail -3 /etc/fstab | awk '{print "hello",$2,$3,6}'
+hello / xfs 6
+hello /boot xfs 6
+hello swap swap 6
+
+变量不能放到引号内
+[root@localhost ~]# tail -3 /etc/fstab | awk '{print "hello:$1"}'
+hello:$1
+hello:$1
+hello:$1
+[root@localhost ~]# tail -3 /etc/fstab | awk '{print "hello:"$1}'
+hello:UUID=fcaeeb31-be94-4915-a2cd-0663a733f140
+hello:UUID=6caa3eec-f48d-4c2d-a2b0-8657112f6f55
+hello:UUID=e2b0cd8f-89a0-458c-8ed9-5ad05f865565
+
+输入整行
+[root@localhost ~]# tail -3 /etc/fstab | awk '{print}'
+UUID=fcaeeb31-be94-4915-a2cd-0663a733f140 /                       xfs     defaults        0 0
+UUID=6caa3eec-f48d-4c2d-a2b0-8657112f6f55 /boot                   xfs     defaults        0 0
+UUID=e2b0cd8f-89a0-458c-8ed9-5ad05f865565 swap                    swap    defaults        0 0
+每行输入空白
+[root@localhost ~]# tail -3 /etc/fstab | awk '{print ""}'
+
+2、变量
+2.1 内建变量
+	FS：input field seperator输入字段分隔符，默认为空白字符；
+	OFS：output field seperator输入字段分隔符，默认为空白字符；
+	RS：input record seperator行分隔符，输入时的换行符；
+	ORS：output record seperator，输出时的换行符；
+
+	NF：number of field，字段数量         变量前不加$
+		{print NF},  字段数量
+{print $NF}   显示的是字段  不要混淆
+	NR：number of record, 行数；
+	FNR：各文件分别计数；行数；
+
+	FILENAME：当前文件名；
+
+	ARGC：命令行参数的个数；
+	ARGV：数组，保存的是命令行所给定的各参数；  
+	
+示例：   
+指明输入文件字段分隔符
+[root@localhost ~]# awk -v FS=':' '{print $1}' /etc/passwd
+root
+bin
+daemon
+或直接使用选项,效果相同
+[root@localhost ~]# awk -F: '{print $1}' /etc/passwd
+root
+bin
+daemon
+指明输入分隔符和输出分隔符
+[root@localhost ~]# awk -v FS=':' -v OFS=':'  '{print $1,$3,$7}' /etc/passwd
+root:0:/bin/bash
+bin:1:/sbin/nologin
+daemon:2:/sbin/nologin
+
+指定行分隔符, 遇到空格和原换行符都换行, 了解
+[root@localhost ~]# awk -v RS=' ' '{print}' /etc/passwd
+指定输出行分隔符, 结果比较诡异, 空格分割的右#号隔开, 原换行符依然解析为换行
+[root@localhost ~]# awk -v RS=' ' -v ORS='#' '{print}' /etc/passwd
+
+输入每行字段个数
+[root@localhost ~]# awk '{print NF}' /etc/fstab 
+0
+1
+2
+10
+1
+9
+12
+1
+6
+6
+6
+
+显示行数, 此处为单个文件,表示为行编号
+[root@localhost ~]# awk '{print NR}' /etc/fstab 
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+两个文件的行数,14行
+[root@localhost ~]# awk '{print NR}' /etc/fstab /etc/issue
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+单独计算行数
+[root@localhost ~]# awk '{print FNR}' /etc/fstab /etc/issue 
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+1
+2
+3
+显示当前正在处理的文件名
+[root@localhost ~]# awk '{print FILENAME}' /etc/fstab /etc/issue 
+/etc/fstab
+/etc/fstab
+/etc/fstab
+/etc/fstab
+/etc/fstab
+/etc/fstab
+/etc/fstab
+/etc/fstab
+/etc/fstab
+/etc/fstab
+/etc/fstab
+/etc/issue
+/etc/issue
+/etc/issue
+
+命令行参数个数,及 各参数
+[root@localhost ~]# awk 'BEGIN{print ARGC}' /etc/fstab /etc/issue
+3
+[root@localhost ~]# awk 'BEGIN{print ARGV[0]}' /etc/fstab /etc/issue
+awk
+[root@localhost ~]# awk 'BEGIN{print ARGV[1]}' /etc/fstab /etc/issue
+/etc/fstab
+[root@localhost ~]# awk 'BEGIN{print ARGV[2]}' /etc/fstab /etc/issue
+/etc/issue
+
+2.2 自定义变量
+	(1) -v var=value
+
+		变量名区分字符大小写；
+
+	(2) 在program中直接定义
+注意:  对文件不做处理时,文件可不带  
+
+示例： 
+输出自定义变量
+[root@localhost ~]# awk -v test='hello awk' '{print test}'  /etc/fstab
+hello awk
+hello awk
+hello awk
+hello awk
+hello awk
+hello awk
+hello awk
+hello awk
+hello awk
+hello awk
+hello awk
+自定义变量,不带文件
+[root@localhost ~]# awk -v test='hello awk' 'BEGIN{print test}'
+hello awk
+自定义变量,在程序中定义
+[root@localhost ~]# awk 'BEGIN{test="hello awk";print test}'
+hello awk
+
+3、printf命令
+
+	格式化输出：printf FORMAT, item1, item2, ...
+                                FORMAT : 占位
+		(1) FORMAT必须给出; 
+		(2) 不会自动换行，需要显式给出换行控制符，\n
+		(3) FORMAT中需要分别为后面的每个item指定一个格式化符号；
+
+		格式符： 可加入字符串
+			%c: 显示字符的ASCII码；
+			%d, %i: 显示十进制整数；
+			%e, %E: 科学计数法数值显示；
+			%f：显示为浮点数；
+			%g, %G：以科学计数法或浮点形式显示数值；
+			%s：显示字符串；
+			%u：无符号整数；
+			%%: 显示%自身；
+
+		修饰符：
+			#[.#]：第一个数字控制显示的宽度；第二个#表示小数点后的精度；
+				%3.1f
+			-: 左对齐
+			+：显示数值的符号
+
+示例： 
+[root@localhost ~]# awk -F: '{printf "%s\n",$1}' /etc/passwd
+root
+bin
+daemon
+[root@localhost ~]# awk -F: '{printf "username: %s\n",$1}' /etc/passwd
+username: root
+username: bin
+username: daemon
+[root@localhost ~]# awk -F: '{printf "username: %s,uid: %d\n",$1,$3}' /etc/passwd
+username: root,uid: 0
+username: bin,uid: 1
+username: daemon,uid: 2
+
+右对齐
+[root@localhost ~]# awk -F: '{printf "username: %15s,uid: %d\n",$1,$3}' /etc/passwd
+username:            root,uid: 0
+username:             bin,uid: 1
+username:          daemon,uid: 2
+左对齐
+[root@localhost ~]# awk -F: '{printf "username: %-15s,uid: %d\n",$1,$3}' /etc/passwd
+username: root           ,uid: 0
+username: bin            ,uid: 1
+username: daemon         ,uid: 2
+  
+4、操作符
+
+	算术操作符：
+		x+y, x-y, x*y, x/y, x^y, x%y
+		-x ： 正数转为负数
+		+x: 转换为数值；
+
+	字符串操作符：没有符号的操作符，字符串连接
+
+	赋值操作符：
+		=, +=, -=, *=, /=, %=, ^=
+		++, --
+
+	比较操作符：
+		>, >=, <, <=, !=, ==
+
+	模式匹配符：
+		~：是否匹配
+		!~：是否不匹配
+
+	逻辑操作符：
+		&&
+		||
+		!
+
+	函数调用：
+		function_name(argu1, argu2, ...)
+
+	条件表达式：
+		selector?if-true-expression:if-false-expression
+
+		# awk -F: '{$3>=1000?usertype="Common User":usertype="Sysadmin or SysUser";printf "%15s:%-s\n",$1,usertype}' /etc/passwd
+
+示例： 
+[root@localhost ~]# awk -F: '{$3>=1000?usertype="common user":usertype="sysadmin or sysuser";printf "%15s:%-s\n",$1,usertype}' /etc/passwd
+           root:sysadmin or sysuser
+            bin:sysadmin or sysuser
+
+5、PATTERN
+
+	(1) empty：空模式，匹配每一行；
+	(2) /regular expression/：仅处理能够被此处的模式匹配到的行；
+	(3) relational expression: 关系表达式；结果有“真”有“假”；结果为“真”才会被处理；
+		真：结果为非0值，非空字符串；
+	(4) line ranges：行范围，
+		startline,endline：/pat1/,/pat2/
+
+		注意： 不支持直接给出数字的格式
+		~]# awk -F: '(NR>=2&&NR<=10){print $1}' /etc/passwd
+	(5) BEGIN/END模式
+		BEGIN{}: 仅在开始处理文件中的文本之前执行一次；
+		END{}：仅在文本处理完成之后执行一次；
+
+示例： 
+
+取UUID开头的行
+[root@localhost ~]# awk '/^UUID/{print $1}' /etc/fstab
+UUID=fcaeeb31-be94-4915-a2cd-0663a733f140
+UUID=6caa3eec-f48d-4c2d-a2b0-8657112f6f55
+UUID=e2b0cd8f-89a0-458c-8ed9-5ad05f865565
+取非UUID开头的行
+[root@localhost ~]# awk '!/^UUID/{print $1}' /etc/fstab
+
+#
+#
+#
+#
+#
+#
+#
+查找id对于1000的用户
+[root@localhost ~]# awk -F: '$3>=1000{print $1,$3}' /etc/passwd
+han 1000
+user101 1001
+取出默认shell为bash的用户  条件表达式
+[root@localhost ~]# awk -F: '$NF=="/bin/bash"{print $1,$NF}' /etc/passwd
+root /bin/bash
+han /bin/bash
+取出默认shell为bash的用户  模式匹配
+[root@localhost ~]# awk -F: '$NF~/bash$/{print $1,$NF}' /etc/passwd
+root /bin/bash
+han /bin/bash
+定界（模式）
+[root@localhost ~]# awk -F: '/^root/,/^daemon/{print $1}' /etc/passwd
+root
+bin
+daemon
+定界（行号）
+[root@localhost ~]# awk -F: '(NR>=1&&NR<=3){print $1}' /etc/passwd
+root
+bin
+daemon
+表头和表尾
+[root@localhost ~]# awk -F: 'BEGIN{print "      username      uid      \n------------------------"}{print $1,$3}END{print "==============="}' /etc/passwd
+      username      uid      
+------------------------
+root 0
+bin 1
+daemon 2
+===============
+  
+6、常用的action
+
+	(1) Expressions    表达式
+	(2) Control statements：if, while等；   控制语句
+	(3) Compound statements：组合语句； 多个语句作为单个代码块
+	(4) input statements  输入语句
+	(5) output statements  输出语句
+
+7、控制语句
+
+	if(condition) {statments} 
+	if(condition) {statments} else {statements}
+	while(conditon) {statments}
+	do {statements} while(condition)
+	for(expr1;expr2;expr3) {statements}
+	break
+	continue
+	delete array[index]  从数组中删除某个元素
+	delete array   删除整个数组
+	exit   退出
+	{ statements }  组合语句
+
+7.1 if-else
+
+	语法：if(condition) statement [else statement]
+                         注意: 有else语句时,需使用花括号
+	
+~]# awk -F: '{if($3>=1000) {printf "Common user: %s\n",$1} else {printf "root or Sysuser: %s\n",$1}}' /etc/passwd
+默认shell为bash
+		~]# awk -F: '{if($NF=="/bin/bash") print $1}' /etc/passwd
+行数大于5
+		~]# awk '{if(NF>5) print $0}' /etc/fstab
+设备使用率大于20%
+		~]# df -h | awk -F[%] '/^\/dev/{print $1}' | awk '{if($NF>=20) print $1}'
+
+		使用场景：对awk取得的整行或某个字段做条件判断；
+示例： 
+单分支
+取用户id大于1000的用户
+[root@localhost ~]# awk -F: '{if($3>=1000) print $1,$3}' /etc/passwd
+han 1000
+user101 1001
+取默认shell为bash
+[root@localhost ~]# awk -F: '{if($NF=="/bin/bash")print $1,$7}' /etc/passwd
+root /bin/bash
+han /bin/bash
+每行字段数大于5的行
+[root@localhost ~]# awk '{if(NF>5)print $0}' /etc/fstab 
+# Created by anaconda on Sat Aug 20 07:19:36 2016
+# Accessible filesystems, by reference, are maintained under '/dev/disk'
+# See man pages fstab(5), findfs(8), mount(8) and/or blkid(8) for more info
+UUID=fcaeeb31-be94-4915-a2cd-0663a733f140 /                       xfs     defaults        0 0
+UUID=6caa3eec-f48d-4c2d-a2b0-8657112f6f55 /boot                   xfs     defaults        0 0
+UUID=e2b0cd8f-89a0-458c-8ed9-5ad05f865565 swap                    swap    defaults        0 0
+
+
+双分支
+[root@localhost ~]# awk -F: '{if($3>=1000) {printf "Common user: %s\n", $1} else {printf "root or sysuser: %s\n",$1}}' /etc/passwd
+root or sysuser: root
+root or sysuser: bin
+查看硬盘使用情况,大于20%
+[root@localhost ~]# df -h | awk -F% '/^\/dev/{print $1}' | awk '{if($NF>=20)print $1,$NF}'
+/dev/sda2 37
+/dev/sda1 29
+/dev/sr0 100
+
+
+7.2 while循环
+	语法：while(condition) statement
+		条件“真”，进入循环；条件“假”，退出循环；
+
+	使用场景：对一行内的多个字段逐一类似处理时使用；对数组中的各元素逐一处理时使用；  
+
+示例： 
+显示每行的每一个字段,和字段的字符个数
+				~]# awk '/^[[:space:]]*linux16/{i=1;while(i<=NF) {print $i,length($i); i++}}' /etc/grub2.cfg
+显示每行的每一个字段,和字段的字符个数(长度大于等于7)
+				~]# awk '/^[[:space:]]*linux16/{i=1;while(i<=NF) {if(length($i)>=7) {print $i,length($i)}; i++}}' /etc/grub2.cfg
+
+练习1, 每行的每字段的长度
+[root@localhost ~]# awk '/^[[:space:]]*linux16/{print}'  /etc/grub2.cfg 
+	linux16 /vmlinuz-3.10.104-1.el7 root=UUID=fcaeeb31-be94-4915-a2cd-0663a733f140 ro rhgb quiet LANG=en_US.UTF-8
+	linux16 /vmlinuz-3.10.0-327.el7.x86_64 root=UUID=fcaeeb31-be94-4915-a2cd-0663a733f140 ro rhgb quiet LANG=en_US.UTF-8
+	linux16 /vmlinuz-0-rescue-f6f5e947dd374a46b0b7238d0ae4becb root=UUID=fcaeeb31-be94-4915-a2cd-0663a733f140 ro rhgb quiet
+[root@localhost ~]# 
+linux16 7^C
+[root@localhost ~]# awk '/^[[:space:]]*linux16/{i=1;while(i<=NF){print $i,length($i);i++}}'  /etc/grub2.cfg 
+linux16 7
+/vmlinuz-3.10.104-1.el7 23
+root=UUID=fcaeeb31-be94-4915-a2cd-0663a733f140 46
+ro 2
+rhgb 4
+quiet 5
+LANG=en_US.UTF-8 16
+linux16 7
+/vmlinuz-3.10.0-327.el7.x86_64 30
+root=UUID=fcaeeb31-be94-4915-a2cd-0663a733f140 46
+ro 2
+rhgb 4
+quiet 5
+LANG=en_US.UTF-8 16
+linux16 7
+/vmlinuz-0-rescue-f6f5e947dd374a46b0b7238d0ae4becb 50
+root=UUID=fcaeeb31-be94-4915-a2cd-0663a733f140 46
+ro 2
+rhgb 4
+quiet 5
+大于等于7的字段:
+[root@localhost ~]# awk '/^[[:space:]]*linux16/{i=1;while(i<=NF){if(length($i)>=7){print $i,length($i)};i++}}'  /etc/grub2.cfg 
+linux16 7
+/vmlinuz-3.10.104-1.el7 23
+root=UUID=fcaeeb31-be94-4915-a2cd-0663a733f140 46
+LANG=en_US.UTF-8 16
+linux16 7
+/vmlinuz-3.10.0-327.el7.x86_64 30
+root=UUID=fcaeeb31-be94-4915-a2cd-0663a733f140 46
+LANG=en_US.UTF-8 16
+linux16 7
+/vmlinuz-0-rescue-f6f5e947dd374a46b0b7238d0ae4becb 50
+root=UUID=fcaeeb31-be94-4915-a2cd-0663a733f140 46
+
+
+7.3 do-while循环
+	语法：do statement while(condition)
+		意义：至少执行一次循环体
+
+7.4 for循环
+	语法：for(expr1;expr2;expr3) statement
+
+		for(variable assignment;condition;iteration process) {for-body}
+循环显示每行每个字段的长度
+	~]# awk '/^[[:space:]]*linux16/{for(i=1;i<=NF;i++) {print $i,length($i)}}' /etc/grub2.cfg
+
+	特殊用法：
+		能够遍历数组中的元素；
+			语法：for(var in array) {for-body}
+
+7.5 switch语句
+	语法：switch(expression) {case VALUE1 or /REGEXP/: statement; case VALUE2 or /REGEXP2/: statement; ...; default: statement}
+              用于字符串比较判断
+              
+7.6 break和continue              针对的是字段
+	break [n]  跳出n层循环
+	continue  进入下一轮循环
+
+7.7 next    控制awk的内生循环   针对的是行
+
+	提前结束对本行的处理而直接进入下一行；
+显示偶数行
+	~]# awk -F: '{if($3%2!=0) next; print $1,$3}' /etc/passwd
+
+8、array
+
+	关联数组：array[index-expression]
+
+		index-expression:
+			(1) 可使用任意字符串；字符串要使用双引号；
+			(2) 如果某数组元素事先不存在，在引用时，awk会自动创建此元素，并将其值初始化为“空串”；数值运算的话会当成0
+
+			若要判断数组中是否存在某元素，要使用"index in array"格式进行；
+
+			weekdays[mon]="Monday"
+
+		若要遍历数组中的每个元素，要使用for循环；
+			for(var in array) {for-body}
+
+示例： 
+~]# awk 'BEGIN{weekdays["mon"]="Monday";weekdays["tue"]="Tuesday";for(i in weekdays) {print weekdays[i]}}'
+
+[root@localhost ~]# awk 'BEGIN{weekday["mon"]="monday";weekday["tue"]="tuesday";for( i in weekday)  {print weekday[i]}}'
+tuesday
+monday
+
+注意：var会遍历array的每个索引；
+
+使用该特性,计算每个状态的次数
+state["LISTEN"]++
+state["ESTABLISHED"]++
+
+~]# netstat -tan | awk '/^tcp\>/{state[$NF]++}END{for(i in state) { print i,state[i]}}'
+
+[root@localhost ~]# netstat -tan | awk '/^tcp\>/{state[$NF]++}END{for(i in state){print i,state[i]}}'
+LISTEN 2
+ESTABLISHED 1
+
+
+~]# awk '{ip[$1]++}END{for(i in ip) {print i,ip[i]}}' /var/log/httpd/access_log
+统计httpd日志中每个ip的访问情况
+[root@localhost ~]# awk '/^[^:]/{ip[$1]++}END{for(i in ip) {print i,ip[i]}}' /var/log/httpd/access_log
+172.16.0.1 143
+
+
+练习1：统计/etc/fstab文件中每个文件系统类型出现的次数；
+~]# awk '/^UUID/{fs[$3]++}END{for(i in fs) {print i,fs[i]}}' /etc/fstab
+
+[root@localhost ~]# awk '/^UUID/{fs[$3]++}END{for(i in fs){print i,fs[i]}}' /etc/fstab 
+swap 1
+xfs 2
+
+练习2：统计指定文件中每个单词出现的次数；
+~]# awk '{for(i=1;i<=NF;i++){count[$i]++}}END{for(i in count) {print i,count[i]}}' /etc/fstab
+
+9、函数
+9.1 内置函数
+	数值处理：
+		rand()：返回0和1之间一个随机数；
+注意： 只有第一次是随机的
+
+[root@localhost ~]# awk 'BEGIN{print rand()}'
+0.237788
+[root@localhost ~]# awk 'BEGIN{print rand()}'
+0.237788
+
+	字符串处理：
+		length([s])：返回指定字符串的长度；
+		sub(r,s,[t])：以r表示的模式来查找t所表示的字符中的匹配的内容，并将其第一次出现替换为s所表示的内容；
+		gsub(r,s,[t])：以r表示的模式来查找t所表示的字符中的匹配的内容，并将其所有出现均替换为s所表示的内容；
+
+		split(s,a[,r])：以r为分隔符切割字符s，并将切割后的结果保存至a所表示的数组中；
+awk数组从1开始编号
+		~]# netstat -tan | awk '/^tcp\>/{split($5,ip,":");count[ip[1]]++}END{for (i in count) {print i,count[i]}}'
+
+9.2 自定义函数
+推荐： 	《sed和awk》  
+```
+### 2、删除/boot/grub/grub.conf文件中所有行的行首的空白字符；  
+```
+[root@node1 ~]# sed  's#^[[:space:]]\+##' /boot/grub/grub.conf
+# grub.conf generated by anaconda
+#
+# Note that you do not have to rerun grub after making changes to this file
+# NOTICE:  You have a /boot partition.  This means that
+#          all kernel and initrd paths are relative to /boot/, eg.
+#          root (hd0,0)
+#          kernel /vmlinuz-version ro root=/dev/mapper/VolGroup-lv_root
+#          initrd /initrd-[generic-]version.img
+#boot=/dev/sda
+default=0
+timeout=5
+splashimage=(hd0,0)/grub/splash.xpm.gz
+hiddenmenu
+title CentOS 6 (2.6.32-504.el6.x86_64)
+root (hd0,0)
+kernel /vmlinuz-2.6.32-504.el6.x86_64 ro root=/dev/mapper/VolGroup-lv_root rd_NO_LUKS LANG=en_US.UTF-8 rd_NO_MD rd_LVM_LV=VolGroup/lv_swap SYSFONT=latarcyrheb-sun16 crashkernel=auto rd_LVM_LV=VolGroup/lv_root  KEYBOARDTYPE=pc KEYTABLE=us rd_NO_DM rhgb quiet
+initrd /initramfs-2.6.32-504.el6.x86_64.img
+
+```
+### 3、删除/etc/fstab文件中所有以#开头，后跟至少一个空白字符的行的行首的#和空白字符； 
+```
+[root@node1 ~]# sed 's@^#[[:space:]]\+@@' /etc/fstab
+
+#
+/etc/fstab
+Created by anaconda on Sun Apr 23 14:26:50 2017
+#
+Accessible filesystems, by reference, are maintained under '/dev/disk'
+See man pages fstab(5), findfs(8), mount(8) and/or blkid(8) for more info
+#
+/dev/mapper/VolGroup-lv_root /                       ext4    defaults        1 1
+UUID=2bf153ef-3ae1-4a1f-8140-813aead76d0a /boot                   ext4    defaults        1 2
+/dev/mapper/VolGroup-lv_home /home                   ext4    defaults        1 2
+/dev/mapper/VolGroup-lv_swap swap                    swap    defaults        0 0
+tmpfs                   /dev/shm                tmpfs   defaults        0 0
+devpts                  /dev/pts                devpts  gid=5,mode=620  0 0
+sysfs                   /sys                    sysfs   defaults        0 0
+proc                    /proc                   proc    defaults        0 0
+
+```
+### 4、把/etc/fstab文件的奇数行另存为/tmp/fstab.3；  
+```
+[root@node1 ~]# sed -n '1~2w /tmp/fstab.3' /etc/fstab
+[root@node1 ~]# cat /tmp/fstab.3
+
+# /etc/fstab
+#
+# See man pages fstab(5), findfs(8), mount(8) and/or blkid(8) for more info
+/dev/mapper/VolGroup-lv_root /                       ext4    defaults        1 1
+/dev/mapper/VolGroup-lv_home /home                   ext4    defaults        1 2
+tmpfs                   /dev/shm                tmpfs   defaults        0 0
+sysfs                   /sys                    sysfs   defaults        0 0
+```
+### 5、echo一个文件路径给sed命令，取出其基名；进一步地，取出其路径名；   
+取基名：
+```
+[root@node1 ~]# echo "/etc/fstab" | sed -r   's@.*/(.*)@\1@'
+fstab
+[root@node1 ~]# echo "/var/name/html" | sed -r   's@.*/(.*)@\1@'
+html
+```  
+取路径名：
+```
+[root@node1 ~]# echo "/var/www/html" | sed -r   's@(.*/).*@\1@'
+/var/www/
+[root@node1 ~]# echo "/etc/fstab" | sed -r   's@(.*/).*@\1@'
+/etc/
+```
+### 6、统计指定文件中所有行中每个单词出现的次数；  
+```
+[root@node1 ~]# awk '{i=1;while(i<=NF){word[$i]++;i++}}END{for(i in word){print i,word[i]}}' /etc/fstab
+mount(8) 1
+Accessible 1
+pages 1
+reference, 1
+/dev/pts 1
+/dev/mapper/VolGroup-lv_swap 1
+info 1
+devpts 2
+tmpfs 2
+/dev/mapper/VolGroup-lv_home 1
+blkid(8) 1
+and/or 1
+# 7
+gid=5,mode=620 1
+Sun 1
+/ 1
+anaconda 1
+/proc 1
+0 10
+1 4
+2 2
+findfs(8), 1
+on 1
+/boot 1
+Apr 1
+/dev/mapper/VolGroup-lv_root 1
+/etc/fstab 1
+sysfs 2
+2017 1
+are 1
+more 1
+/sys 1
+'/dev/disk' 1
+/home 1
+14:26:50 1
+defaults 7
+proc 2
+ext4 3
+by 2
+swap 2
+/dev/shm 1
+23 1
+for 1
+man 1
+See 1
+filesystems, 1
+UUID=2bf153ef-3ae1-4a1f-8140-813aead76d0a 1
+maintained 1
+Created 1
+under 1
+fstab(5), 1
+```
+### 7、统计当前系统上所有tcp连接的各种状态的个数；  
+```
+ ~]# netstat -tan | awk '/^tcp\>/{state[$NF]++}END{for(i in state){print i,state[i]}}'
+ESTABLISHED 3
+LISTEN 14
+```
+### 8、统计指定的web访问日志中各ip的资源访问次数：  
+```
+ ~]# awk '{ip[$1]++}END{for(i in ip){print i,ip[i]}}' /var/log/httpd/access_log
+172.16.0.23 2
+```
+### 9、写一个脚本：定义一个数组，数组元素为/var/log目录下所有以.log结尾的文件的名字；显示每个文件的行数；  
+```
+#!/bin/bash
+# description: 显示/var/log下所有以.log结尾的文件对应的行数
+# author: han
+
+declare -a filenames
+filenames=(/var/log/*.log)
+
+for((i=0;i<${#filenames[*]};i++));do
+        filename=`basename ${filenames[$i]}`
+        lines=`wc -l ${filenames[$i]} | cut -d' ' -f1`
+        printf "%-30s %-5s\n" $filename $lines
+
+done
+
+执行结果： 
+]# bash file_lines.sh
+anaconda.ifcfg.log             168
+anaconda.log                   257
+anaconda.program.log           387
+anaconda.storage.log           1466
+anaconda.yum.log               224
+boot.log                       45
+dracut.log                     1639
+heartbeat.log                  5719
+mysqld.log                     128
+yum.log                        82
+```
+### 10、写一个脚本，能从所有同学中随机挑选一个同学回答问题；进一步地：可接受一个参数，做为要挑选的同学的个数；  
+```
+]# cat choose.sh
+#!/bin/bash
+# 随机抽选一个或几个同学
+# han
+
+
+#定义一个数组，保存同学名字
+declare -a names
+names=("张三" "李四" "王五" "刘六" "田七" "韩信" "匆匆" "忙忙" "豆豆" "五行")
+total=${#names[*]}
+
+
+#定义一个函数,判断新生成的随机数是否已经在下标列表数组choices中,存在则返回3,
+function isexited(){
+        for((j=0;j<${#choices[*]};j++));do
+               if [ ${choices[$j]} -eq $choice ];then
+                     return 3
+               fi
+        done
+}
+
+
+#参数大于一个时,提示使用方法
+[ $# -gt 1 ] && echo "Usage $0 [1-${#names[*]}]" && exit 1
+
+#没有参数时,默认显示一位同学
+if [ $# -eq 0 ];then
+        choice=$[$RANDOM%${total}]
+        echo  "${names[$choice]} "
+#有一个参数时
+else
+        #参数非数字时,退出
+        if [[ ! $1 =~ [0-9] ]];then
+                echo "Invalid agrument"
+                exit 2
+        fi
+        #参数大小在正确范围时
+        #定义一个数组,存放出现过的学生下标
+        declare -a choices
+        if [ $1 -ge 1 ] && [ $1 -le $total ];then
+        #循环$1次
+                for((i=0;i<$1;i++));do
+        #生成随机数,作为数组下标
+                        choice=$[$RANDOM%${total}]
+        #调用函数,判断该下标是否在choices数组中
+                        isexited
+        #判断函数返回值,已存在则将i自减1,使得下个循环变量依然为i,保证下标存在时有多一次循环机会,保证最后choices组有$1个元素
+                        if [ $? -eq 3 ];then
+                                let i--
+                        else
+                                choices[$i]=$choice
+                        fi
+                done
+        #根据下标显示挑选出的同学
+        for i in ${choices[*]};do
+                echo -n "${names[$i]} "
+        done
+        echo
+
+        else
+                echo "Usage $0 [1-${#names[*]}]" && exit 1
+        fi
+
+fi
+```
+效果
+```
+[root@node1 scripts]# ./choose.sh
+忙忙
+[root@node1 scripts]# ./choose.sh 3
+匆匆 韩信 刘六
+[root@node1 scripts]# ./choose.sh 9
+李四 五行 忙忙 豆豆 匆匆 王五 刘六 韩信 张三
+[root@node1 scripts]# ./choose.sh 9
+张三 韩信 刘六 忙忙 王五 匆匆 李四 五行 田七
+[root@node1 scripts]# ./choose.sh 12
+Usage ./choose.sh [1-10]
+```   
+备注: 此题用的方法有些麻烦,看了下其他同学的方法,有个非常简单记录在此:
+```
+#!/bin/bash
+#
+students=(a b c d e f g h i j k)
+read -t 5 -p "Please input the number of students: " num
+if [[ $num -le ${#students[@]} ]]
+then 
+     for ((i=0;i<num;i++))
+     do x=$[$RANDOM % ${#students[@]}]
+        echo  ${students[$x]}
+        students[$x]=${students[${#students[@]}-1]}
+        unset students[${#students[@]}-1]     #这样删就不会再选到这个索引号
+       #unset students[$x]  这个删除只删除了元素的值，但索引号仍在值为空
+     done  
+else echo "Error";exit
+fi
+
+备注: 大致思路看明白了,只是比较费解这种unset方法
+```
+另外一种彻底删除元素加索引的方法:
+```
+[root@node1 scripts]# files=(/etc/[Pp]*)
+[root@node1 scripts]#  echo ${files[@]}
+/etc/pam.d /etc/pango /etc/passwd /etc/passwd- /etc/pkcs11 /etc/pki /etc/plymouth /etc/pm /etc/popt.d /etc/postfix /etc/ppp /etc/printcap /etc/profile /etc/profile.d /etc/protocols
+[root@node1 scripts]#  echo ${#files[@]}
+15
+#当前数组有15个元素
+
+#删除特定索引的元素(同时删除索引)
+[root@node1 scripts]# pos=3    #删除索引3的元素
+[root@node1 scripts]# files=(${files[@]:0:$pos} ${files[@]:$(($pos + 1))})        
+#通过数组切片将前3各元素的数组和从第4各元素开始的数组合并为一个数组
+[root@node1 scripts]# echo ${#files[@]}
+14
+#此时元素各数为14
+[root@node1 scripts]#  echo ${files[@]}
+/etc/pam.d /etc/pango /etc/passwd /etc/pkcs11 /etc/pki /etc/plymouth /etc/pm /etc/popt.d /etc/postfix /etc/ppp /etc/printcap /etc/profile /etc/profile.d /etc/protocols
+# 索引为3的元素/etc/passwd-已经被删除
+```
+
+### 11、授权centos用户可以运行fdisk命令完成磁盘管理，以及使用mkfs或mke2fs实现文件系统管理；  
+```
+root用户: 
+]# visudo
+centos  ALL=(ALL)       /sbin/fdisk,/sbin/mkfs,/sbin/mke2fs
+```
+### 12、授权gentoo用户可以运行逻辑卷管理的相关命令；  
+```
+[root@node1 ~]# visudo
+gentoo  ALL=(ALL)       /sbin/pvs,/sbin/pvdisplay,/sbin/pvcreate,/sbin/vgs,/sbin/vgdisplay,/sbin/vgcreate,/sbin/vgextend,/sbin/vgreduce,/sbin/vgremove,/sbin/lvs
+,/sbin/lvdisplay,/sbin/lvcreate,/sbin/lvremove,/sbin/lvextend,/sbin/resize2fs
+```
+### 13、基于pam_time.so模块，限制用户通过sshd服务远程登录只能在工作时间进行；  
+需用到pam模块pam_time.so    
+1) ssh 
+```
+]# vim /etc/pam.d/sshd
+#%PAM-1.0
+auth       required     pam_sepermit.so
+auth       include      password-auth
+account    required     pam_time.so     #添加该行
+account    required     pam_nologin.so
+
+...
+```
+2）配置time.conf  
+>time.conf配置文件格式：services;ttys;users;times
+
+>services — pam服务名列表，可以ls /etc/pam.d查看
+
+>tty —终端名.
+
+>users —用户名
+
+>times —可以使用services 的时间段  
+
+```
+]# vim /etc/security/time.conf
+sshd;*;centos;MoTuWeThFr0900-1800  #centos用户只能在工作时间通过ssh远程登录
+```
+验证: 
+```
+[centos@node1 ~]$ ssh centos@172.16.0.20
+centos@172.16.0.20's password:
+Connection closed by 172.16.0.20
+```
+### 14、基于pam_listfile.so模块，定义仅某些用户，或某些组内的用户可登录系统；  
+```
+创建允许访问的用户列表
+[root@node1 ~]# vim /etc/sshd_userlist
+root
+centos
+修改文件权限(非必须)
+[root@node1 ~]# chmod 600 /etc/sshd_userlist
+
+修改pam配置文件
+[root@node1 ~]# vim /etc/pam.d/sshd
+#%PAM-1.0
+auth required pam_listfile.so item=user sense=allow file=/etc/sshd_userlist onerr=succeed
+auth       required     pam_sepermit.so
+
+```
+
+验证: 
+```
+centos可以访问
+[centos@node1 ~]$ ssh centos@172.16.0.20
+centos@172.16.0.20's password:
+Last login: Sat May  6 17:04:12 2017 from node1.magedu.com  
+
+fedora被拒绝访问
+[root@node2 ~]# ssh fedora@172.16.0.20
+fedora@172.16.0.20's password:
+Permission denied, please try again.
+fedora@172.16.0.20's password:
+Permission denied, please try again.
+fedora@172.16.0.20's password:
+```
