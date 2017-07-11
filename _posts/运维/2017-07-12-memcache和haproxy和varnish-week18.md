@@ -193,7 +193,7 @@ echo $get_value;
 ```
 ![mark](http://ohfysad7j.bkt.clouddn.com/blog/20170711/011639983.png?imageslim)
 
-问题: 出现无法缓存的问题, 重启php所在服务器后结局  
+问题: 出现无法缓存的问题, 重启php所在服务器后解决
 
 ### 五. 为wordpress配置memcache  
 下载 WordPress Memcached插件(http://wordpress.org/plugins/memcached/)，解压后，将 object-cache.php 上传到 wp-content 目录（不是 wp-content/plugins/），这样 WordPress 会自动检查在 wp-content 目录下是否有 object-cache.php 文件，如果有，直接调用它作为 WordPress 对象缓存机制。
@@ -263,10 +263,10 @@ END
 数据命中率: 614/712=86.2% 
 ```
 2、部署配置haproxy，能够实现将来自用户的80端口的http请求转发至后端8000上的server服务，写出其配置过程。   
-环境准备：  
-增加一台haproxy服务,CentOS 7.2系统
-10.0.0.50   haproxy    
-10.0.0.51 nginx+php+mysql  (借用第一题的环境)
+>环境准备：  
+>增加一台haproxy服务,CentOS 7.2系统
+>10.0.0.50   haproxy    
+>10.0.0.51 nginx+php+mysql  (借用第一题的环境)
 
 ### 一. 安装haproxy  
 ```
