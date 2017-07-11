@@ -106,7 +106,7 @@ define('DB_HOST', '10.0.0.51');
 ![mark](http://ohfysad7j.bkt.clouddn.com/blog/170710/CF81I7dD8B.png?imageslim)
 ![mark](http://ohfysad7j.bkt.clouddn.com/blog/170710/B4b0fgkmbe.png?imageslim) 
 问题： 登录后，提示
-![mark](http://ohfysad7j.bkt.clouddn.com/blog/170710/76KECBjb03.png?imageslim)  
+![mark](http://ohfysad7j.bkt.clouddn.com/blog/170710/76KECBjb03.png?imageslim)    
 需手动加上index.php才能打开， 这个问题有时间再研究。
 
 ### 二. 安装memcached  
@@ -168,7 +168,7 @@ STAT evictions 0   #为获取空闲内存而删除的items数（分配给memcach
 STAT reclaimed 0   #已过期的数据条目来存储新数据的数目
 END
 ```    
-###　三．　安装PHP的Memcached的扩展　　
+### 三．安装PHP的Memcached的扩展　　
 >php连接memcached服务的模块有两个，php-pecl-memcache和php-pecl-memc>ached.若要安装php-pecl-memcached需要依赖libmemcached程序包，可以提>供相应操作查看memcached的工具。在这里为方便演示就直接使用php-pecl->memcache扩展模块。　　
 ```
 [root@localhost ~]# yum -y install php-pecl-memcache
